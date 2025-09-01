@@ -11,6 +11,23 @@ from typing import List, Optional
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title="Ruké Profile API")
+
+
+from fastapi.middleware.cors import CORSMiddleware
+
+# CORS settings
+origins = [
+    "*"  # Testing ke liye sab allow; production me apne frontend URL dalen
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 def get_db():
