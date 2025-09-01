@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Ruké Profile API Test</title>
+</head>
+<body>
+<h2>Signup</h2>
+<form id="signupForm">
+  <input type="text" id="signupUsername" placeholder="Username" required><br><br>
+  <input type="password" id="signupPassword" placeholder="Password" required><br><br>
+  <button type="submit">Signup</button>
+</form>
+
+<h2>Login</h2>
+<form id="loginForm">
+  <input type="text" id="loginUsername" placeholder="Username" required><br><br>
+  <input type="password" id="loginPassword" placeholder="Password" required><br><br>
+  <button type="submit">Login</button>
+</form>
+
+<h2>Profile</h2>
+<button id="getProfile">Get My Profile</button>
+
+<script>
+const API_URL = "https://universal-hilde-pixelart002-64da3a19.koyeb.app";
+
+let accessToken = "";
+
+// --- Signup ---
+document.getElementById("signupForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const username = document.getElementById("signupUsername").value;
+  const password = document.getElementById("signupPassword").value;
+
+  const res = await fetch(`${API_URL}/signup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password })
+  });
+
+  const data = await res.json();
+  alert(JSON.stringify(data));
+});
+
+// --- Login ---
+document.getElementById("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const username = document.getElementById("loginUsername").value;
+  const password = document.getElementById("loginPassword").value;
+
+  const formData = new URLSearchParams();
+  formData.append("username", username);
+  formData.append("password", password);
+
+  const res = await fetch(`${API_URL}/token`, {
+    method: "POST",
+    body: formData
+  });
+
+  const data = await res.json();
+  if (data.access_token) {
+    accessToken = data.access_token;
+    alert("Logged in! Token saved.");
+  } else {
+    alert(JSON.stringify(data));
+  }
+});
+
+// --- Get Profile ---
+document.getElementById("getProfile").addEventListener("click", async () => {
+  if (!accessToken) return alert("Login first!");
+  const res = await fetch(`${API_URL}/profile/me`, {
+    method: "GET",
+    headers: { "Authorization": `Bearer ${accessToken}` }
+  });
+  const data = await res.json();
+  alert(JSON.stringify(data));
+});
+</script>
+</body>
+</html>

@@ -227,3 +227,26 @@ def check_session(token: str = Depends(oauth2_scheme), db: Session = Depends(get
 def list_roles():
     from permissions import PERMISSIONS
     return PERMISSIONS
+    
+    
+    
+    
+    
+    @app.get("/admin/db")
+def view_db(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    admin = get_user_by_token(db, token)
+    if not admin or "super_admin" not in admin.roles:
+        raise HTTPException(status_code=403, detail="Permission denied")
+    users = db.query(User).all()
+    return [
+        {
+            "uid": u.uid,
+            "username": u.username,
+            "hashed_password": u.hashed_password,
+            "session_token": u.session_token,
+            "roles": u.roles,
+            "is_banned": u.is_banned,
+            "profile_metadata": u.profile_metadata
+        }
+        for u in users
+    ]
