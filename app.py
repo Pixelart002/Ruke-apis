@@ -1,49 +1,43 @@
-import os
+# app.py
+
 from flask import Flask
 from database import db
-from routes.user_routes import user_bp
-from routes.product_routes import product_bp
-from routes.cart_routes import cart_bp
-from routes.order_routes import order_bp
-from routes.payment_routes import payment_bp
-from werkzeug.security import generate_password_hash
 from models.user import User
+from models.cart import CartItem
+from models.order import Order
+from models.product import Product
+from routes.user_routes import user_bp
+from routes.order_routes import order_bp
 
 app = Flask(__name__)
-
-DB_PATH = os.path.join(os.getcwd(), 'ruke_store.db')
-app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{DB_PATH}"
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = 'ultragodmodekey'
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"connect_args": {"check_same_thread": False}}
 
+# Initialize database
 db.init_app(app)
 
-with app.app_context():
-    db.create_all()
-    if not User.query.filter_by(is_admin=True).first():
-        admin_user = User(
-            username='admin',
-            full_name='Super Admin',
-            email='admin@example.com',
-            password=generate_password_hash('admin123'),
-            is_admin=True,
-            phone='0000000000',
-            address='Admin HQ'
-        )
-        db.session.add(admin_user)
-        db.session.commit()
-        print("Admin created: admin@example.com / admin123")
-
+# Register Blueprints
 app.register_blueprint(user_bp)
-app.register_blueprint(product_bp)
-app.register_blueprint(cart_bp)
 app.register_blueprint(order_bp)
-app.register_blueprint(payment_bp)
 
-@app.route('/health')
-def health():
-    return {'status':'ok'}
+def create_tables_if_not_exist():
+    """Create tables only if they do not exist (safe for production)."""
+    inspector = db.inspect(db.engine)
+    existing_tables = inspector.get_table_names()
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    if "users" not in existing_tables:
+        User.__table__.create(db.engine)
+    if "cart_item" not in existing_tables:
+        CartItem.__table__.create(db.engine)
+    if "orders" not in existing_tables:
+        Order.__table__.create(db.engine)
+    if "product" not in existing_tables:
+        Product.__table__.create(db.engine)
+
+# Create tables safely inside app context
+with app.app_context():
+    create_tables_if_not_exist()
+
+if __name__ == "__main__":
+    # For local testing
+    app.run(debug=True)
