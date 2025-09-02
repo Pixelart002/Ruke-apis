@@ -1,32 +1,106 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Profile Fetch</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Profile Login Test</title>
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background-color: #f0f2f5;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+.container {
+  background: white;
+  padding: 30px;
+  border-radius: 12px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  width: 300px;
+}
+input, button {
+  width: 100%;
+  padding: 10px;
+  margin: 8px 0;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+}
+button {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+button:hover {
+  background-color: #45a049;
+}
+#result {
+  margin-top: 15px;
+  font-size: 14px;
+  word-wrap: break-word;
+}
+</style>
 </head>
 <body>
-    <h1>Check My Profile</h1>
-    <button id="fetchProfile">Fetch Profile</button>
-    <pre id="output"></pre>
 
-    <script>
-        const token = "f764aac4-a342-4b8f-ad46-7e4c51dd3ec2"; // Tumhara access token
-        const url = "https://universal-hilde-pixelart002-64da3a19.koyeb.app/profile/me";
+<div class="container">
+  <h3>Profile Login</h3>
+  <input type="text" id="username" placeholder="Username" value="kyro">
+  <input type="password" id="password" placeholder="Password" value="123456">
+  <button onclick="login()">Login & Fetch Profile</button>
+  <div id="result"></div>
+</div>
 
-        document.getElementById("fetchProfile").addEventListener("click", async () => {
-            try {
-                const response = await fetch(url, {
-                    method: "GET",
-                    headers: {
-                        "Authorization": `Bearer ${token}`,
-                        "Content-Type": "application/json"
-                    }
-                });
-                const data = await response.json();
-                document.getElementById("output").textContent = JSON.stringify(data, null, 2);
-            } catch (err) {
-                document.getElementById("output").textContent = "Error: " + err;
-            }
-        });
-    </script>
+<script>
+async function login() {
+  const username = document.getElementById('username').value;
+  const password = document.getElementById('password').value;
+  const resultDiv = document.getElementById('result');
+
+  resultDiv.innerText = "Logging in...";
+
+  try {
+    // Step 1: Get token
+    const tokenRes = await fetch('https://universal-hilde-pixelart002-64da3a19.koyeb.app/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
+    });
+
+    if (!tokenRes.ok) {
+      const err = await tokenRes.json();
+      resultDiv.innerText = `Error: ${err.detail || tokenRes.status}`;
+      return;
+    }
+
+    const tokenData = await tokenRes.json();
+    const token = tokenData.access_token;
+
+    // Step 2: Fetch profile
+    const profileRes = await fetch('https://universal-hilde-pixelart002-64da3a19.koyeb.app/profile/me', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!profileRes.ok) {
+      const err = await profileRes.json();
+      resultDiv.innerText = `Profile Error: ${err.detail || profileRes.status}`;
+      return;
+    }
+
+    const profile = await profileRes.json();
+    resultDiv.innerText = JSON.stringify(profile, null, 2);
+
+  } catch (err) {
+    resultDiv.innerText = `Fetch Failed: ${err.message}`;
+  }
+}
+</script>
+
 </body>
 </html>
