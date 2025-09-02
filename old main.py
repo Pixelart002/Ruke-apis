@@ -2,7 +2,8 @@ from fastapi import FastAPI, HTTPException, Depends, Request
 from sqlalchemy.orm import Session
 from database import SessionLocal, engine
 from models import Base, User
-from utils import hash_password, verify_password, generate_token, is_browser_safe, token_expiry_datetime
+from utils import hash_password, verify_password, generate_token,  token_expiry_datetime
+#is_browser_safe,
 from permissions import has_permission
 from ai_integration import query_ai_from_registry
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
