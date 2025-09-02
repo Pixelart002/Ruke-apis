@@ -1,0 +1,85 @@
+# 🚀 Ultra God AI Registry with Plans
+AI_REGISTRY = {
+# ------------------- CHAT -------------------
+"qwen": {
+"name": "Qwen Chat",
+"type": "chat",
+"base_url": "https://qwen.a3z.workers.dev/api",
+"auth": None,
+"endpoints": {
+"new": "/new",
+"completions": "/completions"
+},
+"cost": 0,
+"access": "normal" # ✅ Normal & Premium both
+},
+
+"mistral": {
+"name": "Mistral Chat",
+"type": "chat",
+"base_url": "https://mistral-ai-three.vercel.app",
+"auth": None,
+"endpoints": {
+"ask": "/?id={user_id}&question={question}"
+},
+"cost": 0.002,
+"access": "premium" # 🔒 Only Premium
+},
+
+# ------------------- IMAGE -------------------
+"flux_schnell": {
+"name": "Flux-Schnell",
+"type": "image",
+"base_url": "https://flux-schnell.hello-kaiiddo.workers.dev",
+"auth": None,
+"endpoints": {
+"img": "/img?prompt={prompt}&model={model}&guidance={guidance}&strength={strength}"
+},
+"cost": 0.005,
+"access": "premium" # 🔒 Only Premium
+},
+
+# ------------------- SEARCH -------------------
+"search": {
+"name": "OpenAI Search",
+"type": "search",
+"base_url": "https://search.hello-kaiiddo.workers.dev",
+"auth": None,
+"endpoints": {
+"query": "/search?q={query}"
+},
+"cost": 0,
+"access": "normal" # ✅ Normal & Premium both
+},
+
+# ------------------- VOICE -------------------
+"voice_assistant": {
+"name": "OpenAI Voice Assistant",
+"type": "voice",
+"base_url": "https://voice-assistance.hello-kaiiddo.workers.dev",
+"auth": None,
+"endpoints": {
+"speak": "/{text}?model=openai-audio&voice={voice}"
+},
+"voices": [
+"nova", "alloy", "echo", "fable", "onyx", "shimmer", "coral",
+"verse", "ballad", "ash", "sage", "amuch", "dan"
+],
+"cost": 0.003,
+"access": "premium" # 🔒 Only Premium
+},
+
+# ------------------- TEXT GENERATION -------------------
+"text_generation": {
+"name": "System Prompt Text Generation",
+"type": "text",
+"base_url": "https://text.hello-kaiiddo.workers.dev",
+"auth": None,
+"endpoints": {
+"generate": "/generate?q={prompt}&model={model}&seed={seed}&system={system}"
+},
+"params": ["prompt", "model", "seed", "system"],
+"cost": 0,
+"access": "normal" # ✅ Normal & Premium both
+}
+}
