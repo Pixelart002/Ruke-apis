@@ -1,32 +1,11 @@
-# Core FastAPI framework
 fastapi==0.111.1
-
-# ASGI server for FastAPI
 uvicorn[standard]==0.23.2
-
-# Environment variables
 python-dotenv==1.0.1
-
-# Data validation & parsing
 pydantic==2.11.7
-
-# Password hashing
 passlib==1.7.4
-
-# JWT authentication
 python-jose==3.3.0
-
-# HTTP client for external requests (e.g., Supabase)
 httpx==0.28.1
-
-# Database driver for SQLite (optional if needed locally)
 aiosqlite==0.20.0
-
-# Supabase client
 supabase==2.18.1
-
-# Optional: CORS support
-python-multipart==0.0.6
-
-# Optional: Cryptography (for JWT, secure operations)
+python-multipart
 cryptography==41.0.4
