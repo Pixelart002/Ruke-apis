@@ -1,7 +1,9 @@
-fastapi==0.111.0
-uvicorn[standard]==0.26.1
-httpx==0.26.1
-python-dotenv==1.0.0
-pydantic==2.1.1
-databases==0.7.2
-supabase==1.5.1
+fastapi==0.111.1
+uvicorn[standard]==0.23.2
+python-dotenv==1.0.1
+pydantic==2.2.2
+passlib[bcrypt]==1.7.5
+python-jose==3.3.0
+httpx==1.2.3
+python-multipart==0.0.6
+supabase==1.0.0
