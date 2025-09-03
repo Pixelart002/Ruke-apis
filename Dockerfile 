@@ -1,0 +1,22 @@
+# Dockerfile - FastAPI app for ruke
+FROM python:3.11-slim
+
+# System deps
+RUN apt-get update && apt-get install -y build-essential libpq-dev gcc --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# Workdir
+WORKDIR /app
+
+# Copy files
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+COPY ./app /app/app
+
+# Expose port - match this with Koyeb port setting
+ENV PORT=8080
+EXPOSE 8080
+
+# Use UVICORN directly
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers"]
