@@ -1,5 +1,4 @@
-.env
-.venv/
-__pycache__/
-*.pyc
-.pytest_cache/
+node_modules/
+.env.local
+.next/
+.DS_Store
