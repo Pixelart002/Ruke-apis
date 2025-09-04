@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens */
+:root {
+  --color-primary: hsl(220 88% 56%);
+  --color-primary-variant: hsl(220 76% 46%);
+  --color-accent: hsl(270 85% 60%);
+
+  --surface-start: hsl(220 12% 98%);
+  --surface-end: hsl(220 12% 96%);
+  --gradient-surface: linear-gradient(180deg, var(--surface-start), var(--surface-end));
+
+  --shadow-elevated: 0 12px 30px -8px hsla(220, 88%, 30%, 0.12);
+  --shadow-glow: 0 0 40px hsla(220, 88%, 60%, 0.08);
+
+  --radius-base: 14px;
+  --transition-smooth: all 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Semantic helpers */
+.bg-surface {
+  background: var(--gradient-surface);
+}
+.btn-hero {
+  background: linear-gradient(90deg, var(--color-primary), var(--color-primary-variant));
+  color: hsl(0 0% 100%);
+  border-radius: 12px;
+  padding: 0.6rem 1rem;
+  font-weight: 600;
+  box-shadow: var(--shadow-elevated);
+  transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.18s;
+}
+.btn-hero:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-glow);
+}
+.text-accent {
+  color: var(--color-accent);
+}
+
+/* Shell + card */
+.app-shell {
+  min-height: 100vh;
+  background: var(--gradient-surface);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+.card {
+  background: color-mix(in srgb, white 96%, transparent);
+  border-radius: var(--radius-base);
+  padding: 1rem;
+  box-shadow: var(--shadow-elevated);
+  backdrop-filter: blur(6px);
+}
