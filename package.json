@@ -1,0 +1,5 @@
+{
+  "start": "expo start",
+  "web": "expo start --web",
+  "build:web": "expo build:web"
+}
