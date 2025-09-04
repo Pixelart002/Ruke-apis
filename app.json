@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "ChatGPT Clone",
+    "slug": "chatgpt-clone",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "platforms": ["ios", "android", "web"],
+    "sdkVersion": "50.0.0",
+    "assetBundlePatterns": ["**/*"],
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "web": {
+      "favicon": "./assets/logo.png"
+    }
+  }
+}
