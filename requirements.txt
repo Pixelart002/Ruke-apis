@@ -2,5 +2,6 @@ fastapi
 uvicorn[standard]
 pymongo
 pydantic
+email-validator
 python-multipart
 reportlab # for PDF bills
