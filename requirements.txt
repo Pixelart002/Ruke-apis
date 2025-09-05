@@ -1,7 +1,0 @@
-fastapi
-uvicorn[standard]
-pymongo
-pydantic[email]
-email-validator
-python-multipart
-reportlab # for PDF bills
