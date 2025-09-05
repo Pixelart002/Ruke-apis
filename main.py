@@ -1,9 +1,9 @@
 from fastapi import FastAPI, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from .schemas import User, Product, Order
-from .crud import create_user, get_user_by_email, add_product, list_products, create_order
-from .utils import generate_invoice_pdf, validate_coupon
+from schemas import User, Product, Order
+from crud import create_user, get_user_by_email, add_product, list_products, create_order
+from utils import generate_invoice_pdf, validate_coupon
 
 app = FastAPI(title="GodMode E-Commerce API")
 
