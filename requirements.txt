@@ -1,6 +1,5 @@
-flask
-flask-cors
-pymongo
-werkzeug
+Flask
+Flask-Cors
+pymongo[srv]
 gunicorn
-uvicorn
+werkzeug
