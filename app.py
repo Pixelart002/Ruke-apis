@@ -8,7 +8,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 # --- Configuration ---
 # Replace <YOUR_PASSWORD_HERE> with your actual MongoDB Atlas password
 # It's recommended to use environment variables for security in a real deployment
-DB_PASSWORD = "<YOUR_PASSWORD_HERE>" 
+DB_PASSWORD = "<
+9013ms@12345>" 
 uri = f"mongodb+srv://kyro:{DB_PASSWORD}@kyro.ov5daxu.mongodb.net/?retryWrites=true&w=majority&appName=Kyro"
 
 app = Flask(__name__)
