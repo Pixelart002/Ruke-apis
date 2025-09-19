@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from auth.router import router as auth_router
+from routers import users as users_router
 
 app = FastAPI(
     title="YUKU Protocol API",
@@ -26,10 +27,14 @@ app.add_middleware(
 
 # --- Include Routers ---
 app.include_router(auth_router)
-
+app.include_router(users_router)
 
 # --- Root Endpoint ---
 @app.get("/")
 def read_root():
     return {"status": "YUKU API is online and operational."}
+
+
+
+
 
