@@ -1,25 +1,22 @@
-# /Ruke-apis/database.py
-
 import os
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
 from dotenv import load_dotenv
-from urllib.parse import quote_plus # <-- Import this
+import urllib.parse
 
-load_dotenv()
+load_dotenv() # Load environment variables from .env file
 
-# Get database credentials from environment variables
+# --- Load individual MongoDB variables ---
 MONGO_USER = os.getenv("MONGO_USER")
-MONGO_PASSWORD = os.getenv("MONGO_PASSWORD")
-MONGO_CLUSTER_URL = os.getenv("MONGO_CLUSTER_URL") # e.g., kyro.ov5daxu.mongodb.net
+# URL-encode the password to handle special characters
+MONGO_PASSWORD = urllib.parse.quote_plus(os.getenv("MONGO_PASSWORD")) 
+MONGO_CLUSTER_URL = os.getenv("MONGO_CLUSTER_URL")
 
-# Escape the username and password
-escaped_user = quote_plus(MONGO_USER)
-escaped_password = quote_plus(MONGO_PASSWORD)
+# --- Build the full connection URI ---
+MONGO_URI = f"mongodb+srv://{MONGO_USER}:{MONGO_PASSWORD}@{MONGO_CLUSTER_URL}/?retryWrites=true&w=majority&appName=yuku"
 
-# Build the final, safe MongoDB URI
-MONGO_URI = f"mongodb+srv://{escaped_user}:{escaped_password}@{MONGO_CLUSTER_URL}/?retryWrites=true&w=majority&appName=yuku"
 
+# --- Connect to the client ---
 client = MongoClient(MONGO_URI, server_api=ServerApi('1'))
 
 # Ping to confirm connection
