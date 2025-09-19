@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from auth import router as auth_router
+from auth.router import router as auth_router
 
 app = FastAPI(
     title="YUKU Protocol API",
