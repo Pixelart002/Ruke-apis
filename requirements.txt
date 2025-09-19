@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+pymongo[srv]
+python-dotenv
+passlib[bcrypt]
+python-jose[cryptography]
+email-validator
