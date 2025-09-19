@@ -18,7 +18,7 @@ escaped_user = quote_plus(MONGO_USER)
 escaped_password = quote_plus(MONGO_PASSWORD)
 
 # Build the final, safe MongoDB URI
-MONGO_URI = f"mongodb+srv://{escaped_user}:{escaped_password}@{MONGO_CLUSTER_URL}/?retryWrites=true&w=majority&appName=Kyro"
+MONGO_URI = f"mongodb+srv://{escaped_user}:{escaped_password}@{MONGO_CLUSTER_URL}/?retryWrites=true&w=majority&appName=yuku"
 
 client = MongoClient(MONGO_URI, server_api=ServerApi('1'))
 
