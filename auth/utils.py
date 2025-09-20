@@ -79,7 +79,7 @@ def send_password_reset_email(email: str, token: str):
 
     # IMPORTANT: Update this URL to your frontend's deployed URL when you go live.
     # For now, this is for local testing of a reset-password.html file.
-    reset_link = f"https://yuku-nine.vercel.app/?token={token}"
+    reset_link = f"https://yuku-nine.vercel.app/index .html?token={token}"
 
     html = f"""
     <html><body>
