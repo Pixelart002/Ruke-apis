@@ -82,14 +82,62 @@ def send_password_reset_email(email: str, token: str):
     reset_link = f"https://yuku-nine.vercel.app/reset-password.html?token={token}"
 
     html = f"""
-    <html><body>
-        <p>Hi Agent,</p>
-        <p>A password reset was requested for your YUKU Protocol account.</p>
-        <p>Click the link below to set a new password. This link is valid for 15 minutes.</p>
-        <a href="{reset_link}" style="color: #00ff7f; text-decoration: none;">Reset Your Password</a>
-        <p>If you did not request this, please disregard this email.</p>
-        <p>Regards,<br>YUKU Mission Control</p>
-    </body></html>
+   <html>
+  <body style="margin:0; padding:40px 0; font-family: Arial, Helvetica, sans-serif; background:#f5f6f7; color:#202124; text-align:center;">
+    
+    <div style="max-width:600px; margin:auto; background:#ffffff; border-radius:8px; padding:40px; box-shadow:0 2px 8px rgba(0,0,0,0.05); text-align:left;">
+      
+      <!-- Logo / Animated Accent -->
+      <div style="text-align:center; margin-bottom:25px;">
+        <img src="https://media.giphy.com/media/26tn33aiTi1jkl6H6/giphy.gif" 
+             alt="YUKU Security Animation" 
+             width="80" height="80" 
+             style="border-radius:50%; display:block; margin:auto;">
+      </div>
+      
+      <!-- Title -->
+      <h2 style="margin:0 0 30px; font-size:22px; font-weight:600; color:#202124; text-align:center;">
+        YUKU Protocol Security
+      </h2>
+      
+      <!-- Greeting -->
+      <p style="font-size:16px; line-height:1.6; margin:0 0 20px;">Hi Agent,</p>
+      
+      <!-- Message -->
+      <p style="font-size:16px; line-height:1.6; margin:0 0 20px;">
+        A password reset was requested for your <strong>YUKU Protocol</strong> account.
+      </p>
+      
+      <p style="font-size:16px; line-height:1.6; margin:0 0 30px;">
+        Click the button below to set a new password. This link is valid for <strong>15 minutes</strong>.
+      </p>
+      
+      <!-- CTA Button -->
+      <p style="text-align:center; margin:0 0 30px;">
+        <a href="{reset_link}" 
+           style="background:#1a73e8; color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:4px; font-weight:600; font-size:15px; display:inline-block;">
+           Reset Your Password
+        </a>
+      </p>
+      
+      <!-- Extra Info -->
+      <p style="font-size:14px; line-height:1.6; color:#5f6368; margin:0 0 20px;">
+        If you did not request this, you can safely ignore this email.
+      </p>
+      
+      <!-- Closing -->
+      <p style="font-size:14px; line-height:1.6; margin:0;">
+        Regards,<br>
+        <strong>YUKU Mission Control</strong>
+      </p>
+    </div>
+    
+    <!-- Footer -->
+    <p style="margin-top:20px; font-size:12px; color:#9aa0a6;">
+      © 2025 YUKU Protocol. All rights reserved.
+    </p>
+  </body>
+</html>
     """
     message.attach(MIMEText(html, "html"))
 
