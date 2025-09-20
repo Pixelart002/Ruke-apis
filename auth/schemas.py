@@ -1,14 +1,56 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field,field_validator
+import re # Regular expressions ke liye yeh import zaroori hai
+
+
+
+
 
 class UserCreate(BaseModel):
     fullname: str = Field(..., min_length=3, max_length=50)
-    username: str = Field(..., min_length=3, max_length=20, pattern="^[a-zA-Z0-9_]+$")
+    username: str
 
 
     
 
     email: EmailStr
     password: str = Field(..., min_length=6)
+    
+    # --- YEH HAI NAYA CUSTOM VALIDATOR ---
+
+    @field_validator('username')
+
+    @classmethod
+
+    def validate_username(cls, value: str) -> str:
+
+        # 1. Length check karein
+
+        if not (3 <= len(value) <= 20):
+
+            raise ValueError('Username must be between 3 and 20 characters long.')
+
+        
+
+        # 2. Pattern check karein
+
+        if not re.match("^[a-zA-Z0-9_]+$", value):
+
+            raise ValueError('Username can only contain letters, numbers, and underscores (_).')
+
+        
+
+        # Agar sab theek hai, to value return karein
+
+        return value
+    
+    
+    
+    
+    
+    
+    
+    
+    
 
 class UserLogin(BaseModel):
     email: EmailStr
