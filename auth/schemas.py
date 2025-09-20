@@ -17,3 +17,13 @@ class UserInfo(BaseModel):
     fullname: str
     email: EmailStr
 
+# auth/schemas.py
+
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str = Field(..., min_length=6)
