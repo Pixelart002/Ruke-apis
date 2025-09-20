@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.responses import JSONResponse
 from . import schemas, utils
 from database import user_collection
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 
 router = APIRouter(
     tags=["Authentication"]
@@ -60,12 +60,36 @@ async def login_for_access_token(form_data: schemas.UserLogin):
     })
 
 
+
+
+
+# auth/router.py mein yeh function daalein
+
 @router.post("/forgot-password")
 async def forgot_password(request: schemas.ForgotPasswordRequest):
-    # Yeh function bilkul sahi hai
     user = user_collection.find_one({"email": request.email})
+    
     if not user:
         return JSONResponse(status_code=200, content={"message": "If an account with this email exists, a password reset link has been sent."})
+
+    # --- RATE LIMIT LOGIC (3 Requests per Hour) ---
+    limit_count = 3
+    limit_window = timedelta(hours=1)
+    current_time = datetime.now(timezone.utc)
+
+    request_timestamps = user.get("password_reset_timestamps", [])
+
+    recent_timestamps = [
+        ts for ts in request_timestamps 
+        if current_time - ts < limit_window
+    ]
+
+    if len(recent_timestamps) >= limit_count:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"You have reached the limit of {limit_count} requests per hour. Please try again later."
+        )
+    # --- RATE LIMIT LOGIC END ---
 
     expires = timedelta(minutes=15)
     reset_token = utils.create_access_token(data={"sub": user["email"]}, expires_delta=expires)
@@ -75,7 +99,26 @@ async def forgot_password(request: schemas.ForgotPasswordRequest):
     if not email_sent:
         raise HTTPException(status_code=500, detail="Failed to send password reset email.")
 
+    recent_timestamps.append(current_time)
+    user_collection.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"password_reset_timestamps": recent_timestamps}}
+    )
+
     return JSONResponse(status_code=200, content={"message": "If an account with this email exists, a password reset link has been sent."})
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 @router.post("/reset-password")
