@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from auth.router import router as auth_router
 from routers import users as users_router
 
+
 app = FastAPI(
     title="YUKU Protocol API",
     description="Backend services for the YUKU Mission Control interface.",
