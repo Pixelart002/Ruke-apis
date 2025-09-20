@@ -7,7 +7,13 @@ import re # Regular expressions ke liye yeh import zaroori hai
 
 class UserCreate(BaseModel):
     fullname: str = Field(..., min_length=3, max_length=50)
-    username: str = Field(..., min_length=3, max_length=20, pattern="^[a-zA-Z0-9_]+$")
+    username: str = Field(
+        ..., 
+        min_length=3, 
+        max_length=20, 
+        pattern="^[a-zA-Z0-9_]+$"   # use pattern instead of regex
+    )
+
 
 
     
@@ -16,6 +22,7 @@ class UserCreate(BaseModel):
     password: str = Field(..., min_length=6)
     
 
+    
     
     
     
