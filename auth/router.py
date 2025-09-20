@@ -10,7 +10,7 @@ router = APIRouter(
 
 @router.post("/signup")
 async def create_user(user: schemas.UserCreate):
-    # Check if user with this email already exists
+    # Yeh function bilkul sahi hai
     existing_user = user_collection.find_one({"email": user.email})
     if existing_user:
         raise HTTPException(
@@ -18,14 +18,9 @@ async def create_user(user: schemas.UserCreate):
             detail="Agent ID (Email) already registered."
         )
         
-    # Hash the password
     hashed_password = utils.get_password_hash(user.password)
-    
-    # Create user document
     user_data = user.dict()
     user_data["password"] = hashed_password
-    
-    # Insert user into the database
     user_collection.insert_one(user_data)
     
     return JSONResponse(
@@ -50,17 +45,11 @@ async def login_for_access_token(form_data: schemas.UserLogin):
             detail="Incorrect Agent ID or Passcode."
         )
         
-    # Create access token
-def create_access_token(data: dict, expires_delta: timedelta | None = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
-    else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
+    # --- YAHAN BADLAV KIYA GAYA HAI ---
+    # Galti se paste hui function definition ko hataya gaya
+    # Aur sahi function call add kiya gaya
+    access_token = utils.create_access_token(data={"sub": user["email"]})
+    # --- BADLAV KHATM ---
     
     # Prepare user info to return
     user_info = schemas.UserInfo(fullname=user["fullname"], email=user["email"])
@@ -71,20 +60,16 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     })
 
 
-
-##pasted from here 
 @router.post("/forgot-password")
 async def forgot_password(request: schemas.ForgotPasswordRequest):
+    # Yeh function bilkul sahi hai
     user = user_collection.find_one({"email": request.email})
     if not user:
-        # Hum error nahi denge taaki koi guess na kar sake ki email exist karta hai ya nahi
         return JSONResponse(status_code=200, content={"message": "If an account with this email exists, a password reset link has been sent."})
 
-    # 15 minute ka expiry time wala token banayein
     expires = timedelta(minutes=15)
     reset_token = utils.create_access_token(data={"sub": user["email"]}, expires_delta=expires)
     
-    # Email bhejne ka function call karein
     email_sent = utils.send_password_reset_email(email=request.email, token=reset_token)
 
     if not email_sent:
@@ -95,6 +80,7 @@ async def forgot_password(request: schemas.ForgotPasswordRequest):
 
 @router.post("/reset-password")
 async def reset_password(request: schemas.ResetPasswordRequest):
+    # Yeh function bilkul sahi hai
     try:
         payload = utils.jwt.decode(request.token, utils.SECRET_KEY, algorithms=[utils.ALGORITHM])
         email: str = payload.get("sub")
@@ -111,10 +97,4 @@ async def reset_password(request: schemas.ResetPasswordRequest):
     user_collection.update_one({"email": email}, {"$set": {"password": new_hashed_password}})
 
     return JSONResponse(status_code=200, content={"message": "Password has been reset successfully."})
-
-
-
-
-
-
 
