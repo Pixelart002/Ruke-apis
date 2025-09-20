@@ -17,6 +17,18 @@ async def create_user(user: schemas.UserCreate):
             status_code=status.HTTP_409_CONFLICT,
             detail="Agent ID (Email) already registered."
         )
+        # --- USERNAME UNIQUENESS CHECK ADD KAREIN ---
+    if user_collection.find_one({"username": user.username}):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This username is already taken. Please choose another one."
+        )
+        
+        
+        
+        
+        
+        
         
     hashed_password = utils.get_password_hash(user.password)
     user_data = user.dict()
@@ -27,6 +39,22 @@ async def create_user(user: schemas.UserCreate):
         status_code=status.HTTP_201_CREATED,
         content={"message": "Agent successfully authorized. Proceed to terminal access."}
     )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 @router.post("/login")
 async def login_for_access_token(form_data: schemas.UserLogin):
@@ -52,12 +80,45 @@ async def login_for_access_token(form_data: schemas.UserLogin):
     # --- BADLAV KHATM ---
     
     # Prepare user info to return
-    user_info = schemas.UserInfo(fullname=user["fullname"], email=user["email"])
+    user_info = schemas.UserInfo(
+        userId=str(user["_id"]), # _id ko string mein convert karein
+        username=user["username"],
+        fullname=user["fullname"],
+        email=user["email"]
+    )
     
     return JSONResponse(content={
         "token": {"access_token": access_token, "token_type": "bearer"},
         "user": user_info.dict()
     })
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

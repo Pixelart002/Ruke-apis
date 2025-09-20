@@ -13,4 +13,14 @@ router = APIRouter(
 async def read_users_me(current_user: Dict = Depends(auth_utils.get_current_user)):
     # The dependency get_current_user already fetches the user from the DB
     # We just need to return it.
-    return current_user
+    return {
+        "userId": str(current_user["_id"]),
+        "username": current_user["username"],
+        "fullname": current_user["fullname"],
+        "email": current_user["email"]
+    }
+
+
+
+
+
