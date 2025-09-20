@@ -81,7 +81,7 @@ async def forgot_password(request: schemas.ForgotPasswordRequest):
 
     recent_timestamps = [
         ts for ts in request_timestamps 
-        if current_time - ts < limit_window
+        if current_time - ts.replace(tzinfo=timezone.utc) < limit_window
     ]
 
     if len(recent_timestamps) >= limit_count:
@@ -106,6 +106,14 @@ async def forgot_password(request: schemas.ForgotPasswordRequest):
     )
 
     return JSONResponse(status_code=200, content={"message": "If an account with this email exists, a password reset link has been sent."})
+
+
+
+
+
+
+
+
 
 
 
