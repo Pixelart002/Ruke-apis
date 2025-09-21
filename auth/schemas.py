@@ -39,7 +39,13 @@ class UserInfo(BaseModel):
     fullname: str
     email: EmailStr
 
-# auth/schemas.py
+
+
+class UserUpdate(BaseModel):
+    fullname: str = Field(..., min_length=3, max_length=50)
+    username: str = Field(..., min_length=3, max_length=20, pattern="^[a-zA-Z0-9_]+$")
+
+
 
 
 

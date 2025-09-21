@@ -24,3 +24,25 @@ async def read_users_me(current_user: Dict = Depends(auth_utils.get_current_user
 
 
 
+############
+@router.put("/me")
+async def update_user_me(user_update: auth_schemas.UserUpdate, current_user: Dict = Depends(auth_utils.get_current_user)):
+    
+    # Check if the new username is already taken by ANOTHER user
+    if user_update.username != current_user.get("username"):
+        if user_collection.find_one({"username": user_update.username}):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This username is already taken."
+            )
+            
+    # Update the user document in the database
+    user_collection.update_one(
+        {"_id": current_user["_id"]},
+        {"$set": {
+            "fullname": user_update.fullname,
+            "username": user_update.username
+        }}
+    )
+    
+    return {"message": "Profile updated successfully!"}
