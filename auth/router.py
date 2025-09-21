@@ -82,7 +82,7 @@ async def login_for_access_token(form_data: schemas.UserLogin):
     # Prepare user info to return
     user_info = schemas.UserInfo(
         userId=str(user["_id"]), # _id ko string mein convert karein
-        username=user["username","N/A"],
+        username=user.get["username","N/A"],
         fullname=user["fullname"],
         email=user["email"]
     )
