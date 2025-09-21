@@ -15,7 +15,7 @@ async def read_users_me(current_user: Dict = Depends(auth_utils.get_current_user
     # We just need to return it.
     return {
         "userId": str(current_user["_id"]),
-        "username": current_user("username","N/A"),
+        "username": current_user.get("username","N/A"),
         "fullname": current_user["fullname"],
         "email": current_user["email"]
     }
