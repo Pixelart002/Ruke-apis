@@ -1,8 +1,12 @@
 # routers/users.py
 
-from fastapi import APIRouter, Depends
-from auth import utils as auth_utils, schemas as auth_schemas
+from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Dict
+
+# --- YEH IMPORTS ZAROORI HAIN ---
+from auth import utils as auth_utils, schemas as auth_schemas
+from database import user_collection
+# --- IMPORTS KHATM ---
 
 router = APIRouter(
     prefix="/users",
@@ -11,20 +15,14 @@ router = APIRouter(
 
 @router.get("/me", response_model=auth_schemas.UserInfo)
 async def read_users_me(current_user: Dict = Depends(auth_utils.get_current_user)):
-    # The dependency get_current_user already fetches the user from the DB
-    # We just need to return it.
+    # Yeh function ab sahi hai
     return {
         "userId": str(current_user["_id"]),
-        "username": current_user.get("username","N/A"),
+        "username": current_user.get("username", "N/A"),
         "fullname": current_user["fullname"],
         "email": current_user["email"]
     }
 
-
-
-
-
-############
 @router.put("/me")
 async def update_user_me(user_update: auth_schemas.UserUpdate, current_user: Dict = Depends(auth_utils.get_current_user)):
     
