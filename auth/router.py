@@ -124,53 +124,43 @@ async def login_for_access_token(form_data: schemas.UserLogin):
 
 
 
-# auth/router.py mein yeh function daalein
+# auth/router.py
 
 @router.post("/forgot-password")
 async def forgot_password(request: schemas.ForgotPasswordRequest):
     user = user_collection.find_one({"email": request.email})
-    
     if not user:
         return JSONResponse(status_code=200, content={"message": "If an account with this email exists, a password reset link has been sent."})
 
-    # --- RATE LIMIT LOGIC (3 Requests per Hour) ---
+    # Rate limit logic...
     limit_count = 3
     limit_window = timedelta(hours=1)
     current_time = datetime.now(timezone.utc)
-
     request_timestamps = user.get("password_reset_timestamps", [])
-
     recent_timestamps = [
         ts for ts in request_timestamps 
         if current_time - ts.replace(tzinfo=timezone.utc) < limit_window
     ]
-
     if len(recent_timestamps) >= limit_count:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"You have reached the limit of {limit_count} requests per hour. Please try again later."
         )
-    # --- RATE LIMIT LOGIC END ---
 
-# --- NAYA TOKEN INVALIDATION LOGIC ---
-    
-current_token_version = user.get("password_reset_version", 0)
+    # Naya Token Invalidation Logic
+    current_token_version = user.get("password_reset_version", 0)
     new_token_version = current_token_version + 1
     
     user_collection.update_one(
         {"_id": user["_id"]},
         {"$set": {"password_reset_version": new_token_version}}
     )
-    
-    
-    
-
-
-
-
 
     expires = timedelta(minutes=15)
-    reset_token = utils.create_access_token(data={"sub": user["email"]}, expires_delta=expires)
+    reset_token = utils.create_access_token(
+        data={"sub": user["email"], "prv": new_token_version}, 
+        expires_delta=expires
+    )
     
     email_sent = utils.send_password_reset_email(email=request.email, token=reset_token)
 
@@ -184,19 +174,6 @@ current_token_version = user.get("password_reset_version", 0)
     )
 
     return JSONResponse(status_code=200, content={"message": "If an account with this email exists, a password reset link has been sent."})
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -224,8 +201,6 @@ async def reset_password(request: schemas.ResetPasswordRequest):
     user = user_collection.find_one({"email": email})
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
-
-
     # --- NAYA SECURITY CHECK ---
     # Check karein ki token ka version database ke version se match karta hai ya nahi
     db_token_version = user.get("password_reset_version", 0)
