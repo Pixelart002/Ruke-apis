@@ -45,23 +45,37 @@ app.include_router(notifications_router) # <-- Yeh line add karein
 def read_root():
     return {"status": "YUKU API is online and operational."}
 
-
 # --- Add Firebase Initialization Logic Here ---
-try:
-    # Get the JSON credentials from the environment variable
-    firebase_creds_json = os.getenv("FIREBASE_CREDENTIALS_JSON")
-    if firebase_creds_json:
-        creds_dict = json.loads(firebase_creds_json)
-        cred = credentials.Certificate(creds_dict)
-        # Check if the app is already initialized to prevent errors
-        if not firebase_admin._apps:
-            firebase_admin.initialize_app(cred)
-        print("Firebase Admin SDK initialized successfully.")
-    else:
-        print("FIREBASE_CREDENTIALS_JSON environment variable not found.")
-except Exception as e:
-    print(f"Error initializing Firebase Admin SDK: {e}")
-# ---------------------------------------------
+# This code will work for BOTH local testing and deployment on Koyeb
 
+# Put your JSON file's name here
+FIREBASE_KEY_FILENAME = "yukuprotocol01-firebase-adminsdk-fbsvc-1ac73f33b3.json"
+
+try:
+# 1. Check for Koyeb's Environment Variable first (for deployment)
+firebase_creds_json = os.getenv("FIREBASE_CREDENTIALS_JSON")
+if firebase_creds_json:
+print("Initializing Firebase from Environment Variable (Deployment Mode)...")
+creds_dict = json.loads(firebase_creds_json)
+cred = credentials.Certificate(creds_dict)
+
+# 2. If no ENV VAR, use the local file (for your computer)
+elif os.path.exists(FIREBASE_KEY_FILENAME):
+print(f"Initializing Firebase from local file: '{FIREBASE_KEY_FILENAME}' (Local Mode)...")
+cred = credentials.Certificate(FIREBASE_KEY_FILENAME)
+
+# If neither method works, raise an error
+else:
+raise FileNotFoundError("Could not find Firebase credentials. Set FIREBASE_CREDENTIALS_JSON env var or place the key file in the root directory.")
+
+# Initialize the app if it hasn't been already
+if not firebase_admin._apps:
+firebase_admin.initialize_app(cred)
+
+print("✅ Firebase Admin SDK initialized successfully.")
+
+except Exception as e:
+print(f"❌ Error initializing Firebase Admin SDK: {e}")
+# ---------------------------------------------
 
 
