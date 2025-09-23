@@ -3,6 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from auth.router import router as auth_router
 from routers.users import router as users_router
 from routers.ai import router as ai_router
+from routers import notifications as notifications_router # <-- Yeh line add karein
+
+import json
+import firebase_admin
+from firebase_admin import credentials
+
 
 app = FastAPI(
     title="YUKU Protocol API",
@@ -26,10 +32,13 @@ app.add_middleware(
 )
 
 
+
 # --- Include Routers ---
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(ai_router)
+app.include_router(notifications_router) # <-- Yeh line add karein
+
 # --- Root Endpoint ---
 @app.get("/")
 def read_root():
@@ -39,3 +48,9 @@ def read_root():
 
 
 
+# Load service account key from environment variable
+service_account_info = json.loads(os.environ["FIREBASE_SERVICE_ACCOUNT_KEY"])
+
+# Initialize Firebase app
+cred = credentials.Certificate(service_account_info)
+firebase_admin.initialize_app(cred)
