@@ -49,7 +49,7 @@ def read_root():
 # --- Add Firebase Initialization Logic Here ---
 try:
     # Get the JSON credentials from the environment variable
-    firebase_creds_json = os.getenv("yukuprotocol01-firebase-adminsdk-fbsvc-1ac73f33b3.json")
+    firebase_creds_json = os.getenv("FIREBASE_CREDENTIALS_JSON")
     if firebase_creds_json:
         creds_dict = json.loads(firebase_creds_json)
         cred = credentials.Certificate(creds_dict)
