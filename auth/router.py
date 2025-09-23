@@ -205,7 +205,7 @@ async def reset_password(request: schemas.ResetPasswordRequest):
     # Check karein ki token ka version database ke version se match karta hai ya nahi
     db_token_version = user.get("password_reset_version", 0)
     if token_version != db_token_version:
-        raise HTTPException(status_code=400, detail="This reset link has expired because a newer one was requested.")
+        raise HTTPException(status_code=400, detail="This reset link has expired.")
     # --- CHECK KHATM ---
 
     new_hashed_password = utils.get_password_hash(request.password)
