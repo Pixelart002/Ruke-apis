@@ -5,9 +5,6 @@ from routers.users import router as users_router
 from routers.ai import router as ai_router
 from routers import notifications as notifications_router # <-- Yeh line add karein
 
-import json
-import firebase_admin
-from firebase_admin import credentials
 
 
 app = FastAPI(
@@ -48,9 +45,3 @@ def read_root():
 
 
 
-# Load service account key from environment variable
-service_account_info = json.loads(os.environ["FIREBASE_SERVICE_ACCOUNT_KEY"])
-
-# Initialize Firebase app
-cred = credentials.Certificate(service_account_info)
-firebase_admin.initialize_app(cred)

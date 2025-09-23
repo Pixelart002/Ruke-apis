@@ -3,6 +3,7 @@
 .venv/
 venv/
 env/
+yukuprotocol01-firebase-adminsdk-fbsvc-1ac73f33b3.json
 
 # Python cache
 __pycache__/

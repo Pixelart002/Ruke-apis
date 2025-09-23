@@ -12,7 +12,7 @@ from database import user_collection
 # --- Firebase Admin SDK ko Initialize Karein ---
 # Zaroori: 'serviceAccountKey.json' file aapke project ke root mein honi chahiye
 try:
-    cred = credentials.Certificate("serviceAccountKey.json")
+    cred = credentials.Certificate("yukuprotocol01-firebase-adminsdk-fbsvc-1ac73f33b3.json")
     firebase_admin.initialize_app(cred)
 except Exception as e:
     print(f"Firebase Admin SDK initialization error: {e}")
