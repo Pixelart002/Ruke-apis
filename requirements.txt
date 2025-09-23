@@ -8,4 +8,4 @@ google-generativeai
 apscheduler
 httpx
 bcrypt==3.2.0
-passlib==5.3.0
+passlib==1.7.4
