@@ -41,8 +41,6 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
-
-
 # --- User Authentication Functions ---
 def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(

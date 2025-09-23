@@ -152,6 +152,23 @@ async def forgot_password(request: schemas.ForgotPasswordRequest):
         )
     # --- RATE LIMIT LOGIC END ---
 
+# --- NAYA TOKEN INVALIDATION LOGIC ---
+    
+current_token_version = user.get("password_reset_version", 0)
+    new_token_version = current_token_version + 1
+    
+    user_collection.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"password_reset_version": new_token_version}}
+    )
+    
+    
+    
+
+
+
+
+
     expires = timedelta(minutes=15)
     reset_token = utils.create_access_token(data={"sub": user["email"]}, expires_delta=expires)
     
@@ -196,6 +213,9 @@ async def reset_password(request: schemas.ResetPasswordRequest):
     try:
         payload = utils.jwt.decode(request.token, utils.SECRET_KEY, algorithms=[utils.ALGORITHM])
         email: str = payload.get("sub")
+        token_version: int = payload.get("prv")
+
+      
         if email is None:
             raise HTTPException(status_code=400, detail="Invalid reset token.")
     except utils.JWTError:
@@ -205,8 +225,19 @@ async def reset_password(request: schemas.ResetPasswordRequest):
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
 
+
+    # --- NAYA SECURITY CHECK ---
+    # Check karein ki token ka version database ke version se match karta hai ya nahi
+    db_token_version = user.get("password_reset_version", 0)
+    if token_version != db_token_version:
+        raise HTTPException(status_code=400, detail="This reset link has expired because a newer one was requested.")
+    # --- CHECK KHATM ---
+
     new_hashed_password = utils.get_password_hash(request.password)
-    user_collection.update_one({"email": email}, {"$set": {"password": new_hashed_password}})
+    # Token ko dobara istemaal hone se rokne ke liye version ko firse badha dein
+    user_collection.update_one(
+        {"email": email}, 
+        {"$set": {"password": new_hashed_password}, "$inc": {"password_reset_version": 1}}
+    )
 
     return JSONResponse(status_code=200, content={"message": "Password has been reset successfully."})
-
