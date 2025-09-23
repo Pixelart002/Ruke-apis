@@ -209,10 +209,16 @@ async def reset_password(request: schemas.ResetPasswordRequest):
     # --- CHECK KHATM ---
 
     new_hashed_password = utils.get_password_hash(request.password)
-    # Token ko dobara istemaal hone se rokne ke liye version ko firse badha dein
+  # --- YEH LINE UPDATE KI GAYI HAI ---
+    # Password set karne ke saath hi, token version ko firse increment kar dein
+    # Isse yeh token dobara istemaal nahi ho paayega
     user_collection.update_one(
         {"email": email}, 
-        {"$set": {"password": new_hashed_password}, "$inc": {"password_reset_version": 1}}
+        {
+            "$set": {"password": new_hashed_password},
+            "$inc": {"password_reset_version": 1} # Token version ko 1 se badha dein
+        }
     )
-
+    # --- UPDATE KHATM ---
+    
     return JSONResponse(status_code=200, content={"message": "Password has been reset successfully."})
