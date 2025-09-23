@@ -121,139 +121,60 @@ async def login_for_access_token(form_data: schemas.UserLogin):
 
 
 
-@router.post("/reset-password")
-
-async def reset_password(request: schemas.ResetPasswordRequest):
-
-    try:
-
-        # Decode the token to get the email and the token version
-
-        payload = jwt.decode(
-
-            request.token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
-
-        )
-
-        email: str = payload.get("sub")
-
-        token_version: int = payload.get("prv") # Get Password Reset Version
 
 
 
-        if email is None or token_version is None:
+# auth/router.py
 
-            raise HTTPException(
+@router.post("/forgot-password")
+async def forgot_password(request: schemas.ForgotPasswordRequest):
+    user = user_collection.find_one({"email": request.email})
+    if not user:
+        return JSONResponse(status_code=200, content={"message": "If an account with this email exists, a password reset link has been sent."})
 
-                status_code=status.HTTP_401_UNAUTHORIZED,
-
-                detail="Invalid token claims."
-
-            )
-
-
-
-    except jwt.ExpiredSignatureError:
-
+    # Rate limit logic...
+    limit_count = 3
+    limit_window = timedelta(hours=1)
+    current_time = datetime.now(timezone.utc)
+    request_timestamps = user.get("password_reset_timestamps", [])
+    recent_timestamps = [
+        ts for ts in request_timestamps 
+        if current_time - ts.replace(tzinfo=timezone.utc) < limit_window
+    ]
+    if len(recent_timestamps) >= limit_count:
         raise HTTPException(
-
-            status_code=status.HTTP_401_UNAUTHORIZED,
-
-            detail="Reset link has expired."
-
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"You have reached the limit of {limit_count} requests per hour. Please try again later."
         )
 
-    except jwt.PyJWTError:
-
-        raise HTTPException(
-
-            status_code=status.HTTP_401_UNAUTHORIZED,
-
-            detail="Invalid or expired reset link."
-
-        )
-
-
-
-    # Find the user in the database
-
-    user = user_collection.find_one({"email": email})
-
-
-
-    # SECURITY CHECK 1: Validate the token version
-
-    # If user doesn't exist or token version doesn't match, the link is invalid.
-
-    # This instantly expires old links when a new one is requested.
-
-    if not user or user.get("password_reset_version") != token_version:
-
-        raise HTTPException(
-
-            status_code=status.HTTP_401_UNAUTHORIZED,
-
-            detail="Invalid or expired reset link."
-
-        )
-
-        
-
-    # SECURITY CHECK 2: Prevent reusing the old password
-
-    if utils.verify_password(request.password, user["hashed_password"]):
-
-        raise HTTPException(
-
-            status_code=status.HTTP_400_BAD_REQUEST,
-
-            detail="New passcode cannot be the same as the old one."
-
-        )
-
-
-
-    # Hash the new password
-
-    new_hashed_password = utils.get_password_hash(request.password)
-
-    
-
-    # SECURITY CHECK 3: Invalidate the token immediately after use
-
-    # Increment the version number so this token can never be used again.
-
+    # Naya Token Invalidation Logic
     current_token_version = user.get("password_reset_version", 0)
-
+    new_token_version = current_token_version + 1
     
-
     user_collection.update_one(
-
         {"_id": user["_id"]},
-
-        {
-
-            "$set": {
-
-                "hashed_password": new_hashed_password,
-
-                "password_reset_version": current_token_version + 1
-
-            }
-
-        }
-
+        {"$set": {"password_reset_version": new_token_version}}
     )
 
-
-
-    return JSONResponse(
-
-        status_code=status.HTTP_200_OK, 
-
-        content={"message": "Passcode has been updated successfully."}
-
+    expires = timedelta(minutes=15)
+    reset_token = utils.create_access_token(
+        data={"sub": user["email"], "prv": new_token_version}, 
+        expires_delta=expires
     )
+    
+    email_sent = utils.send_password_reset_email(email=request.email, token=reset_token)
+
+    if not email_sent:
+        raise HTTPException(status_code=500, detail="Failed to send password reset email.")
+
+    recent_timestamps.append(current_time)
+    user_collection.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"password_reset_timestamps": recent_timestamps}}
+    )
+
+    return JSONResponse(status_code=200, content={"message": "If an account with this email exists, a password reset link has been sent."})
+
 
 
 
