@@ -2,7 +2,12 @@ fastapi
 uvicorn[standard]
 pymongo[srv]
 python-dotenv
-passlib[bcrypt]==1.7.4
 python-jose[cryptography]
 email-validator
 google-generativeai
+apscheduler
+httpx
+
+--- SECURITY LIBRARIES (NAYA TARIQA) ---
+bcrypt==3.2.0
+passlib==5.3.0
