@@ -6,7 +6,10 @@ from routers.ai import router as ai_router
 from routers.notifications import router as notifications_router
 
 
-
+import firebase_admin
+from firebase_admin import credentials
+import os
+import json
 
 app = FastAPI(
     title="YUKU Protocol API",
@@ -43,6 +46,22 @@ def read_root():
     return {"status": "YUKU API is online and operational."}
 
 
+# --- Add Firebase Initialization Logic Here ---
+try:
+    # Get the JSON credentials from the environment variable
+    firebase_creds_json = os.getenv("yukuprotocol01-firebase-adminsdk-fbsvc-1ac73f33b3.json")
+    if firebase_creds_json:
+        creds_dict = json.loads(firebase_creds_json)
+        cred = credentials.Certificate(creds_dict)
+        # Check if the app is already initialized to prevent errors
+        if not firebase_admin._apps:
+            firebase_admin.initialize_app(cred)
+        print("Firebase Admin SDK initialized successfully.")
+    else:
+        print("FIREBASE_CREDENTIALS_JSON environment variable not found.")
+except Exception as e:
+    print(f"Error initializing Firebase Admin SDK: {e}")
+# ---------------------------------------------
 
 
 
