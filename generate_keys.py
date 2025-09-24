@@ -1,6 +1,6 @@
 # File: generate_keys.py
-# Run this once to get your keys
-# You may need to run: pip install pywebpush
+# Note: You need to temporarily install pywebpush for this script only
+# Run: pip install pywebpush
 
 from pywebpush import vapid
 
