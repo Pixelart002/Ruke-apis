@@ -19,7 +19,7 @@ app = FastAPI(
 )
 
 # --- Firebase Initialization (Works Everywhere) ---
-FIREBASE_KEY_FILENAME = "yukuprotocol01-firebase-adminsdk-fbsvc-1ac73f33b3.json"
+FIREBASE_KEY_FILENAME = "noneed"
 
 try:
     firebase_creds_json = os.getenv("FIREBASE_CREDENTIALS_JSON")
