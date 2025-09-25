@@ -16,7 +16,7 @@ router = APIRouter(prefix="/webpush", tags=["Web Push Notifications"])
 
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY")
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY")
-VAPID_CLAIMS = {"sub": f"mailto:{os.getenv('EMAIL_FROM', 'example@example.com')}"}
+VAPID_CLAIMS = {"sub": f"mailto:{os.getenv('EMAIL_FROM', '9013ms@gmail.com')}"}
 
 class WebPushSubscription(BaseModel):
     endpoint: str
