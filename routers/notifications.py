@@ -1,7 +1,9 @@
 # File: routers/notifications.py
+# Corrected the final sending logic
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from webpush import WebPush, WebPushException
+from webpush import send, WebPushException # <-- 1. CHANGED IMPORT
 from typing import Dict, Any
 import os
 import json
@@ -14,7 +16,7 @@ router = APIRouter(prefix="/webpush", tags=["Web Push Notifications"])
 
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY")
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY")
-VAPID_CLAIMS = {"sub": f"mailto:{os.getenv('EMAIL_FROM', '9013ms@gmail.com')}"}
+VAPID_CLAIMS = {"sub": f"mailto:{os.getenv('EMAIL_FROM', 'example@example.com')}"}
 
 class WebPushSubscription(BaseModel):
     endpoint: str
@@ -38,10 +40,18 @@ async def send_test_notification(current_user: Dict[str, Any] = Depends(auth_uti
     user = user_collection.find_one({"_id": user_id})
     if not user or "webpush_subscription" not in user:
         raise HTTPException(status_code=404, detail="User subscription not found.")
+    
     subscription_info = user["webpush_subscription"]
     message_data = json.dumps({"title": "YUKU Protocol Test", "body": "This is your own custom push notification!"})
+    
     try:
-        WebPush(subscription_info).send(data=message_data, vapid_private_key=VAPID_PRIVATE_KEY, vapid_claims=VAPID_CLAIMS)
+        # --- 2. THIS IS THE CORRECTED SEND LOGIC ---
+        send(
+            subscription_info=subscription_info,
+            data=message_data,
+            vapid_private_key=VAPID_PRIVATE_KEY,
+            vapid_claims=VAPID_CLAIMS
+        )
         return {"message": "Test notification sent successfully!"}
     except WebPushException as ex:
         raise HTTPException(status_code=500, detail=str(ex))
