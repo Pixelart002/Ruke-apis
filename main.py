@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from auth.router import router as auth_router
 from routers.users import router as users_router
 from routers.ai import router as ai_router
-from routers.notifications import notifications_router
+from routers.notifications import router as notifications_router
 
 app = FastAPI(
     title="YUKU Protocol API",
