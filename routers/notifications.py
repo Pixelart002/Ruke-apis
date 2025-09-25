@@ -1,7 +1,7 @@
 # File: routers/notifications.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from webpush import WebPusher, WebPushException
+from webpush import WebPush, WebPushException
 from typing import Dict, Any
 import os
 import json
@@ -41,7 +41,7 @@ async def send_test_notification(current_user: Dict[str, Any] = Depends(auth_uti
     subscription_info = user["webpush_subscription"]
     message_data = json.dumps({"title": "YUKU Protocol Test", "body": "This is your own custom push notification!"})
     try:
-        WebPusher(subscription_info).send(data=message_data, vapid_private_key=VAPID_PRIVATE_KEY, vapid_claims=VAPID_CLAIMS)
+        WebPush(subscription_info).send(data=message_data, vapid_private_key=VAPID_PRIVATE_KEY, vapid_claims=VAPID_CLAIMS)
         return {"message": "Test notification sent successfully!"}
     except WebPushException as ex:
         raise HTTPException(status_code=500, detail=str(ex))
