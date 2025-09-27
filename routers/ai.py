@@ -30,7 +30,7 @@ async def ask_gemini(
         )
     
     try:
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-2.5-flash-lite')
         response = model.generate_content(request.prompt)
         return {"response": response.text}
     except Exception as e:
