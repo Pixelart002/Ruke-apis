@@ -54,3 +54,54 @@ async def send_test_notification(current_user: Dict[str, Any] = Depends(auth_uti
         return {"message": "Test notification sent successfully!"}
     except WebPushException as ex:
         raise HTTPException(status_code=500, detail=str(ex))
+        
+        
+        
+        
+        
+        
+        
+
+# --- NEW: Endpoint to send notifications to ALL subscribed users ---
+@router.post("/broadcast", status_code=status.HTTP_200_OK)
+async def broadcast_notification(
+    message: BroadcastMessage,
+    current_user: Dict[str, Any] = Depends(auth_utils.get_current_user) # Protect this endpoint
+):
+    # In a real app, you should check if current_user is an admin
+    
+    # Find all users who have a subscription
+    subscribed_users = user_collection.find({"webpush_subscription": {"$exists": True}})
+    
+    success_count = 0
+    failure_count = 0
+    
+    message_data = json.dumps({"title": message.title, "body": message.body})
+    
+    async for user in subscribed_users:
+        subscription_info = user["webpush_subscription"]
+        try:
+            webpush(
+                subscription_info=subscription_info,
+                data=message_data,
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims=VAPID_CLAIMS
+            )
+            success_count += 1
+        except WebPushException as ex:
+            # If a subscription is invalid, we just log it and continue
+            print(f"Failed to send notification to user {user['_id']}: {ex}")
+            failure_count += 1
+            # Optional: You could remove the invalid subscription from the database here
+            # user_collection.update_one({"_id": user["_id"]}, {"$unset": {"webpush_subscription": ""}})
+
+    return {
+        "message": "Broadcast attempt finished.",
+        "sent_successfully": success_count,
+        "failed_to_send": failure_count
+    }
+
+
+
+
+
