@@ -1,10 +1,10 @@
 # File: routers/notifications.py
-# FINAL version with custom and broadcast functionality
+# FINAL version with custom, broadcast, and IMAGE functionality
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, HttpUrl
 from pywebpush import webpush, WebPushException
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import os
 import json
 
@@ -18,7 +18,7 @@ VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY")
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY")
 VAPID_CLAIMS = {"sub": f"mailto:{os.getenv('EMAIL_FROM', '9013ms@gmail.com')}"}
 
-# --- Models for all notification types ---
+# --- Models for all notification types (UPDATED) ---
 class WebPushSubscription(BaseModel):
     endpoint: str
     keys: Dict[str, str]
@@ -26,11 +26,20 @@ class WebPushSubscription(BaseModel):
 class BroadcastMessage(BaseModel):
     title: str
     body: str
+    image: Optional[HttpUrl] = None  # Added optional image field
 
 class CustomNotification(BaseModel):
     target_email: EmailStr
     title: str
     body: str
+    image: Optional[HttpUrl] = None  # Added optional image field
+
+# --- NEW: Helper function to build the payload with optional image ---
+def build_message_data(title: str, body: str, image: Optional[str] = None) -> str:
+    payload = {"title": title, "body": body}
+    if image:
+        payload["image"] = str(image) # Convert HttpUrl to string
+    return json.dumps(payload)
 
 # --- Existing Endpoints (No changes needed) ---
 @router.get("/vapid-public-key")
@@ -66,20 +75,20 @@ async def send_test_notification(current_user: Dict[str, Any] = Depends(auth_uti
     except WebPushException as ex:
         raise HTTPException(status_code=500, detail=str(ex))
 
-# --- NEW: Custom Notification Endpoint ---
+# --- UPDATED: Custom Notification Endpoint with Image Support ---
 @router.post("/send-custom", status_code=status.HTTP_200_OK)
 async def send_custom_notification(
     notification: CustomNotification,
     current_user: Dict[str, Any] = Depends(auth_utils.get_current_user) # Protected
 ):
-    # Find the target user by their email
     target_user = user_collection.find_one({"email": notification.target_email})
     
     if not target_user or "webpush_subscription" not in target_user:
         raise HTTPException(status_code=404, detail=f"Subscription not found for user: {notification.target_email}")
 
     subscription_info = target_user["webpush_subscription"]
-    message_data = json.dumps({"title": notification.title, "body": notification.body})
+    # Use the helper function to include the image if it exists
+    message_data = build_message_data(notification.title, notification.body, notification.image)
     
     try:
         webpush(
@@ -92,21 +101,19 @@ async def send_custom_notification(
     except WebPushException as ex:
         raise HTTPException(status_code=500, detail=str(ex))
 
-# --- NEW: Broadcast Endpoint (for Advertisements) ---
+# --- UPDATED: Broadcast Endpoint with Image Support ---
 @router.post("/broadcast", status_code=status.HTTP_200_OK)
 def broadcast_notification(
     message: BroadcastMessage,
     current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)
 ):
-    # Find all users who have a subscription
     subscribed_users = user_collection.find({"webpush_subscription": {"$exists": True}})
     
     success_count = 0
     failure_count = 0
-    message_data = json.dumps({"title": message.title, "body": message.body})
+    # Use the helper function to include the image if it exists
+    message_data = build_message_data(message.title, message.body, message.image)
     
-    # NOTE: I have corrected the loop. Your 'user_collection' is synchronous (PyMongo),
-    # so we use a standard 'for' loop, not 'async for'.
     for user in subscribed_users:
         subscription_info = user["webpush_subscription"]
         try:
