@@ -1,10 +1,10 @@
 # File: routers/notifications.py
-# FINAL version with DUAL MODE image support (HttpUrl or str)
+# FINAL version with custom, broadcast, and IMAGE functionality
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, HttpUrl
 from pywebpush import webpush, WebPushException
-from typing import Dict, Any, Optional, Union # <-- Union ko import karein
+from typing import Dict, Any, Optional, Union
 import os
 import json
 
@@ -18,29 +18,30 @@ VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY")
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY")
 VAPID_CLAIMS = {"sub": f"mailto:{os.getenv('EMAIL_FROM', '9013ms@gmail.com')}"}
 
-# --- Models updated for DUAL MODE image support ---
+# --- Models for all notification types (UPDATED) ---
+class WebPushSubscription(BaseModel):
+    endpoint: str
+    keys: Dict[str, str]
+
 class BroadcastMessage(BaseModel):
     title: str
     body: str
-    # Ab yeh HttpUrl ya str, dono ko accept karega
-    image: Optional[Union[HttpUrl, str]] = None 
+    image: Optional[Union[HttpUrl,str]] = None  # Added optional image field
 
 class CustomNotification(BaseModel):
-    target_emtail: EmailStr
+    target_email: EmailStr
     title: str
     body: str
-    # Ab yeh HttpUrl ya str, dono ko accept karega
-    image: Optional[Union[HttpUrl, str]] = None
+    image: Optional[Union[HttpUrl,str]] = None  # Added optional image field
 
-# --- Helper function to build the payload ---
-def build_message_data(title: str, body: str, image: Optional[Union[HttpUrl, str]] = None) -> str:
+# --- NEW: Helper function to build the payload with optional image ---
+def build_message_data(title: str, body: str, image: Optional[str] = None) -> str:
     payload = {"title": title, "body": body}
     if image:
-        # str() function HttpUrl aur str, dono ko aasaani se handle kar leta hai
-        payload["image"] = str(image)
+        payload["image"] = str(image) # Convert HttpUrl to string
     return json.dumps(payload)
 
-# --- (GET /vapid-public-key and POST /subscribe endpoints remain the same) ---
+# --- Existing Endpoints (No changes needed) ---
 @router.get("/vapid-public-key")
 def get_vapid_public_key():
     if not VAPID_PUBLIC_KEY:
@@ -48,15 +49,11 @@ def get_vapid_public_key():
     return {"public_key": VAPID_PUBLIC_KEY}
 
 @router.post("/subscribe", status_code=status.HTTP_201_CREATED)
-async def subscribe(subscription: BaseModel, current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)):
+async def subscribe(subscription: WebPushSubscription, current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)):
     user_id = ObjectId(current_user["_id"])
-    # Pydantic v1 mein .dict() use hota hai, v2 mein .model_dump()
-    sub_dict = subscription.dict() if hasattr(subscription, 'dict') else subscription.model_dump()
-    user_collection.update_one({"_id": user_id}, {"$set": {"webpush_subscription": sub_dict}})
+    user_collection.update_one({"_id": user_id}, {"$set": {"webpush_subscription": subscription.dict()}})
     return {"message": "Successfully subscribed."}
 
-
-# --- (send-test endpoint remains the same) ---
 @router.post("/send-test", status_code=status.HTTP_200_OK)
 async def send_test_notification(current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)):
     user_id = ObjectId(current_user["_id"])
@@ -78,18 +75,19 @@ async def send_test_notification(current_user: Dict[str, Any] = Depends(auth_uti
     except WebPushException as ex:
         raise HTTPException(status_code=500, detail=str(ex))
 
-
-# --- Updated Custom Notification Endpoint ---
+# --- UPDATED: Custom Notification Endpoint with Image Support ---
 @router.post("/send-custom", status_code=status.HTTP_200_OK)
 async def send_custom_notification(
     notification: CustomNotification,
-    current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)
+    current_user: Dict[str, Any] = Depends(auth_utils.get_current_user) # Protected
 ):
     target_user = user_collection.find_one({"email": notification.target_email})
+    
     if not target_user or "webpush_subscription" not in target_user:
         raise HTTPException(status_code=404, detail=f"Subscription not found for user: {notification.target_email}")
 
     subscription_info = target_user["webpush_subscription"]
+    # Use the helper function to include the image if it exists
     message_data = build_message_data(notification.title, notification.body, notification.image)
     
     try:
@@ -103,15 +101,17 @@ async def send_custom_notification(
     except WebPushException as ex:
         raise HTTPException(status_code=500, detail=str(ex))
 
-# --- Updated Broadcast Endpoint ---
+# --- UPDATED: Broadcast Endpoint with Image Support ---
 @router.post("/broadcast", status_code=status.HTTP_200_OK)
 def broadcast_notification(
     message: BroadcastMessage,
     current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)
 ):
     subscribed_users = user_collection.find({"webpush_subscription": {"$exists": True}})
+    
     success_count = 0
     failure_count = 0
+    # Use the helper function to include the image if it exists
     message_data = build_message_data(message.title, message.body, message.image)
     
     for user in subscribed_users:
@@ -132,4 +132,3 @@ def broadcast_notification(
         "sent_successfully": success_count,
         "failed_to_send": failure_count
     }
-
