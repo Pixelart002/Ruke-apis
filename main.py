@@ -6,7 +6,6 @@ from auth.router import router as auth_router
 from routers.users import router as users_router
 from routers.ai import router as ai_router
 from routers.notifications import router as notifications_router
-from routers.status import router as status_router
 
 
 app = FastAPI(
@@ -32,7 +31,6 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(ai_router)
 app.include_router(notifications_router)
-app.include_router(status_router)
 
 # --- Root Endpoint ---
 @app.get("/")
