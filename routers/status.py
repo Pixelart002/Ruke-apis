@@ -46,20 +46,3 @@ async def get_system_status():
         }
     }
     
-
-C. `database.py` ko Update Karein:**
-Apni `database.py` file mein yeh `db_ping` function add karein.
-```python
-async def db_ping():
-    # PyMongo mein ping command a-synchronous hota hai
-    await client.admin.command('ping')
-```
-
-**D. `main.py` Mein Router Add Karein:**
-Apni `main.py` file mein naye status router ko import aur include karein.
-```python
-# main.py mein imports ke saath add karein
-from routers.status import router as status_router
-
-# ... (baaki routers ke saath)
-app.include_router(status_router)
