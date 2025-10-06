@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 router = APIRouter(prefix="/status", tags=["System Status"])
 
 FRONTEND_URL = "https://yuku-nine.vercel.app"
+BACKEND_URL = "https://open-feliza-pixelart002-78fb4fe8.koyeb.app"
 
 @router.get("/")
 async def get_system_status():
@@ -38,6 +39,7 @@ async def get_system_status():
         "backend_service": {
             "status": backend_status,
             "database": db_status,
+             "url": BACKEND_URL
             "timestamp": datetime.now(timezone.utc).isoformat()
         },
         "frontend_service": {
