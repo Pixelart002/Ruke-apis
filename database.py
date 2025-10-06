@@ -28,3 +28,11 @@ except Exception as e:
     
 db = client.yuku_protocol_db
 user_collection = db["agents"]
+
+
+
+# new function h ye 
+
+async def db_ping():
+    # PyMongo mein ping command a-synchronous hota hai
+    await client.admin.command('ping')
