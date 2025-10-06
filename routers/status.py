@@ -39,7 +39,7 @@ async def get_system_status():
         "backend_service": {
             "status": backend_status,
             "database": db_status,
-             "url": BACKEND_URL
+             "url": BACKEND_URL,
             "timestamp": datetime.now(timezone.utc).isoformat()
         },
         "frontend_service": {
