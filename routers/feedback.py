@@ -15,7 +15,7 @@ class FeedbackCreate(BaseModel):
     rating: int
     comment: constr(min_length=10, max_length=500)
 
-class Feedback(FeedbackCreate):
+class FeedbackResponse(FeedbackCreate):
     id: str
     username: str
     created_at: datetime
@@ -27,10 +27,10 @@ async def submit_feedback(
     current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)
 ):
     """
-    Allows a logged-in user to submit feedback.
+    Allows a logged-in user to submit feedback with a rating and comment.
     """
-    feedback_collection = db.feedback  # Use a 'feedback' collection
-    
+    feedback_collection = db.feedback  # Use a 'feedback' collection in MongoDB
+
     new_feedback = {
         "user_id": ObjectId(current_user["_id"]),
         "username": current_user["username"],
@@ -42,24 +42,24 @@ async def submit_feedback(
     await feedback_collection.insert_one(new_feedback)
     return {"message": "Thank you for your feedback!"}
 
-@router.get("/", response_model=List[Feedback])
+@router.get("/", response_model=List[FeedbackResponse])
 async def get_all_feedback():
     """
     Fetches all submitted feedback to display publicly as testimonials.
     """
     feedback_collection = db.feedback
     
-    # Fetch latest 10 feedbacks, sorted by newest first
-    feedbacks_cursor = feedback_collection.find().sort("created_at", -1).limit(10)
+    # Fetch latest 20 feedbacks, sorted by newest first
+    feedbacks_cursor = feedback_collection.find().sort("created_at", -1).limit(20)
     
     feedback_list = []
-    async for feedback in feedbacks_cursor:
-        feedback_list.append(Feedback(
-            id=str(feedback["_id"]),
-            username=feedback["username"],
-            rating=feedback["rating"],
-            comment=feedback["comment"],
-            created_at=feedback["created_at"]
+    async for feedback_doc in feedbacks_cursor:
+        feedback_list.append(FeedbackResponse(
+            id=str(feedback_doc["_id"]),
+            username=feedback_doc["username"],
+            rating=feedback_doc["rating"],
+            comment=feedback_doc["comment"],
+            created_at=feedback_doc["created_at"]
         ))
         
     return feedback_list

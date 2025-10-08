@@ -9,6 +9,9 @@ from routers.notifications import router as notifications_router
 from routers.feedback import router as feedback_router
 
 
+database.Base.metadata.create_all(bind=database.engine)
+
+
 
 app = FastAPI(
     title="YUKU Protocol API",
