@@ -7,10 +7,10 @@ from routers.users import router as users_router
 from routers.ai import router as ai_router
 from routers.notifications import router as notifications_router
 from routers.feedback import router as feedback_router
-from . import database
 
 
-database.Base.metadata.create_all(bind=database.engine)
+
+
 
 
 
