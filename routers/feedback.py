@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+    from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, constr
 from typing import Dict, Any, List
 from datetime import datetime, timezone
@@ -22,14 +22,15 @@ class FeedbackResponse(FeedbackCreate):
 
 # --- Endpoints ---
 @router.post("/", status_code=status.HTTP_201_CREATED)
-async def submit_feedback(
+# CHANGE 1: Changed 'async def' to 'def'
+def submit_feedback(
     feedback: FeedbackCreate,
     current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)
 ):
     """
-    Allows a logged-in user to submit feedback with a rating and comment.
+    Allows a logged-in user to submit feedback.
     """
-    feedback_collection = db.feedback  # Use a 'feedback' collection in MongoDB
+    feedback_collection = db.feedback
 
     new_feedback = {
         "user_id": ObjectId(current_user["_id"]),
@@ -39,21 +40,24 @@ async def submit_feedback(
         "created_at": datetime.now(timezone.utc)
     }
     
-    await feedback_collection.insert_one(new_feedback)
+    # CHANGE 2: Removed 'await' because insert_one is synchronous
+    feedback_collection.insert_one(new_feedback)
+    
     return {"message": "Thank you for your feedback!"}
 
 @router.get("/", response_model=List[FeedbackResponse])
-async def get_all_feedback():
+# CHANGE 3: Changed 'async def' to 'def'
+def get_all_feedback():
     """
     Fetches all submitted feedback to display publicly as testimonials.
     """
     feedback_collection = db.feedback
     
-    # Fetch latest 20 feedbacks, sorted by newest first
     feedbacks_cursor = feedback_collection.find().sort("created_at", -1).limit(20)
     
     feedback_list = []
-    async for feedback_doc in feedbacks_cursor:
+    # CHANGE 4: Changed 'async for' to a standard 'for' loop
+    for feedback_doc in feedbacks_cursor:
         feedback_list.append(FeedbackResponse(
             id=str(feedback_doc["_id"]),
             username=feedback_doc["username"],
