@@ -31,6 +31,19 @@ def submit_feedback(
     Allows a logged-in user to submit feedback.
     """
     feedback_collection = db.feedback
+    
+    user_id = ObjectId(current_user["_id"])
+
+    # --- START: ADD THIS SNIPPET ---
+    # Check if feedback from this user already exists
+    existing_feedback = feedback_collection.find_one({"user_id": user_id})
+    if existing_feedback:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You have already submitted feedback."
+        )
+    # --- END: ADD THIS SNIPPET ---
+
 
     new_feedback = {
         "user_id": ObjectId(current_user["_id"]),
