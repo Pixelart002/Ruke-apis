@@ -68,7 +68,8 @@ async def update_wallet_address(
     current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)
 ):
     user_id = ObjectId(current_user["_id"])
-    await db.users.update_one(
+    # FIXED: Removed 'await' from the synchronous call
+    db.users.update_one(
         {"_id": user_id},
         {"$set": {"wallet_address": wallet_data.wallet_address}}
     )
@@ -155,7 +156,8 @@ async def confirm_payment(
     if not trade or str(trade["buyer_id"]) != current_user["_id"]:
         raise HTTPException(status_code=403, detail="Not authorized or trade not found.")
     
-    await db.p2p_trades.update_one(
+    # FIXED: Removed 'await' from the synchronous call
+    db.p2p_trades.update_one(
         {"_id": ObjectId(trade_id)},
         {"$set": {"status": "payment_confirmed", "payment_confirmed_at": datetime.now(timezone.utc)}}
     )
@@ -175,11 +177,12 @@ async def release_crypto(
         raise HTTPException(status_code=400, detail="Cannot release crypto before payment is confirmed.")
 
     # Update trade and listing quantities
-    await db.p2p_trades.update_one(
+    # FIXED: Removed 'await' from both synchronous calls
+    db.p2p_trades.update_one(
         {"_id": ObjectId(trade_id)},
         {"$set": {"status": "crypto_released", "released_at": datetime.now(timezone.utc)}}
     )
-    await db.p2p_listings.update_one(
+    db.p2p_listings.update_one(
         {"_id": ObjectId(trade["listing_id"])},
         {"$inc": {"available_quantity": -trade["quantity"]}}
     )
