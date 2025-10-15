@@ -183,4 +183,4 @@ async def release_crypto(
         {"_id": ObjectId(trade["listing_id"])},
         {"$inc": {"available_quantity": -trade["quantity"]}}
     )
-    return {"message": "Crypto release confirmed. Trade completed."}: 
+    return {"message": "Crypto release confirmed. Trade completed."}
