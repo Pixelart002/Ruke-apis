@@ -105,9 +105,11 @@ async def create_p2p_listing(
     })
     
     result = await run_in_threadpool(db.p2p_listings.insert_one, new_listing_doc)
-    
-    # OPTIMIZATION: Manually construct response, avoiding a redundant DB read.
     new_listing_doc["_id"] = result.inserted_id
+    
+    # --- FIX: Manually convert ObjectId to string before returning ---
+    new_listing_doc["_id"] = str(new_listing_doc["_id"])
+    
     return new_listing_doc
 
 @router.get("/listings", response_model=List[ListingResponse])
@@ -119,7 +121,6 @@ async def get_active_listings(
     if asset: query["asset"] = asset.upper()
     if listing_type: query["listing_type"] = listing_type
 
-    # OPTIMIZATION: Use projection to fetch only necessary data, reducing network load.
     projection = {
         "owner_username": 1, "listing_type": 1, "asset": 1, "fiat_currency": 1,
         "price_per_unit": 1, "available_quantity": 1, "min_limit": 1, "max_limit": 1,
@@ -139,7 +140,6 @@ async def create_trade(
     except bson_errors.InvalidId:
         raise HTTPException(status_code=400, detail=f"Invalid listing_id format: '{trade.listing_id}'")
 
-    # ATOMIC OPERATION: Find listing and decrement quantity if criteria are met
     updated_listing = await run_in_threadpool(
         db.p2p_listings.find_one_and_update,
         {
@@ -150,7 +150,7 @@ async def create_trade(
             "max_limit": {"$gte": trade.quantity}
         },
         {"$inc": {"available_quantity": -trade.quantity}},
-        return_document=ReturnDocument.BEFORE # Get document before the update
+        return_document=ReturnDocument.BEFORE
     )
 
     if not updated_listing:
@@ -160,7 +160,7 @@ async def create_trade(
         "listing_id": str(updated_listing["_id"]),
         "seller_id": updated_listing["owner_id"],
         "buyer_id": ObjectId(current_user["_id"]),
-        "seller_username": updated_listing["owner_username"], # OPTIMIZATION: Use existing data
+        "seller_username": updated_listing["owner_username"],
         "buyer_username": current_user["username"],
         "quantity": trade.quantity,
         "fiat_amount": trade.quantity * updated_listing["price_per_unit"],
@@ -169,9 +169,11 @@ async def create_trade(
     }
 
     result = await run_in_threadpool(db.p2p_trades.insert_one, new_trade_doc)
-    
-    # OPTIMIZATION: Manually construct response, avoiding a redundant DB read.
     new_trade_doc["_id"] = result.inserted_id
+
+    # --- FIX: Manually convert ObjectId to string before returning ---
+    new_trade_doc["_id"] = str(new_trade_doc["_id"])
+
     return new_trade_doc
 
 @router.put("/trades/{trade_id}/confirm-payment", status_code=status.HTTP_200_OK)
@@ -201,17 +203,14 @@ async def release_crypto(
     if trade["status"] != "payment_confirmed":
         raise HTTPException(status_code=400, detail="Cannot release assets before payment is confirmed.")
 
-    # DATABASE TRANSACTION: Ensure both operations succeed or fail together
     async with await db.client.start_session() as session:
         async with session.start_transaction():
-            # Update the trade status to completed
             await db.p2p_trades.update_one(
                 {"_id": trade["_id"]},
                 {"$set": {"status": "completed", "released_at": datetime.now(timezone.utc)}},
                 session=session
             )
             
-            # Check if the listing is now depleted and should be deactivated
             listing = await db.p2p_listings.find_one(
                 {"_id": ObjectId(trade["listing_id"])},
                 projection={"available_quantity": 1, "min_limit": 1},
