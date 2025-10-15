@@ -2,14 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
-from bson import ObjectId
+from bson import ObjectId, errors as bson_errors
 
 from auth import utils as auth_utils
 from database import db
 
 router = APIRouter(prefix="/p2p", tags=["P2P Exchange"])
 
-# --- Pydantic Models (as per your plan) ---
+# --- Pydantic Models ---
 
 class UserWalletUpdate(BaseModel):
     wallet_address: str
@@ -59,7 +59,6 @@ class TradeResponse(BaseModel):
         arbitrary_types_allowed = True
         json_encoders = {ObjectId: str}
 
-
 # --- API Endpoints ---
 
 @router.put("/users/me/wallet", status_code=status.HTTP_200_OK)
@@ -68,7 +67,6 @@ async def update_wallet_address(
     current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)
 ):
     user_id = ObjectId(current_user["_id"])
-    # FIXED: Removed 'await' from the synchronous call
     db.users.update_one(
         {"_id": user_id},
         {"$set": {"wallet_address": wallet_data.wallet_address}}
@@ -90,8 +88,9 @@ async def create_p2p_listing(
         "updated_at": datetime.now(timezone.utc)
     })
     
-    result = await db.p2p_listings.insert_one(new_listing)
-    created_listing = await db.p2p_listings.find_one({"_id": result.inserted_id})
+    # FIXED: Removed 'await' from synchronous calls
+    result = db.p2p_listings.insert_one(new_listing)
+    created_listing = db.p2p_listings.find_one({"_id": result.inserted_id})
     return created_listing
 
 
@@ -107,6 +106,7 @@ async def get_active_listings(
         query["listing_type"] = listing_type
 
     listings_cursor = db.p2p_listings.find(query).sort("created_at", -1)
+    # NOTE: This is the correct use of await for a Motor cursor
     return await listings_cursor.to_list(length=100)
 
 
@@ -115,7 +115,14 @@ async def create_trade(
     trade: TradeCreate,
     current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)
 ):
-    listing = await db.p2p_listings.find_one({"_id": ObjectId(trade.listing_id), "status": "active"})
+    try:
+        # FIXED: Added error handling for invalid ID format
+        listing_obj_id = ObjectId(trade.listing_id)
+    except bson_errors.InvalidId:
+        raise HTTPException(status_code=400, detail=f"Invalid listing_id format: '{trade.listing_id}'")
+
+    # FIXED: Removed 'await' from synchronous call
+    listing = db.p2p_listings.find_one({"_id": listing_obj_id, "status": "active"})
     if not listing:
         raise HTTPException(status_code=404, detail="Active listing not found.")
 
@@ -128,7 +135,8 @@ async def create_trade(
     if seller_id == buyer_id:
         raise HTTPException(status_code=400, detail="You cannot trade with yourself.")
 
-    seller = await db.users.find_one({"_id": seller_id})
+    # FIXED: Removed 'await' from synchronous call
+    seller = db.users.find_one({"_id": seller_id})
 
     new_trade = {
         "listing_id": trade.listing_id,
@@ -142,8 +150,9 @@ async def create_trade(
         "created_at": datetime.now(timezone.utc)
     }
 
-    result = await db.p2p_trades.insert_one(new_trade)
-    created_trade = await db.p2p_trades.find_one({"_id": result.inserted_id})
+    # FIXED: Removed 'await' from synchronous calls
+    result = db.p2p_trades.insert_one(new_trade)
+    created_trade = db.p2p_trades.find_one({"_id": result.inserted_id})
     return created_trade
 
 
@@ -152,13 +161,19 @@ async def confirm_payment(
     trade_id: str,
     current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)
 ):
-    trade = await db.p2p_trades.find_one({"_id": ObjectId(trade_id)})
+    try:
+        # FIXED: Added error handling for invalid ID format
+        trade_obj_id = ObjectId(trade_id)
+    except bson_errors.InvalidId:
+        raise HTTPException(status_code=400, detail=f"Invalid trade_id format: '{trade_id}'")
+
+    # FIXED: Removed 'await' from synchronous call
+    trade = db.p2p_trades.find_one({"_id": trade_obj_id})
     if not trade or str(trade["buyer_id"]) != current_user["_id"]:
         raise HTTPException(status_code=403, detail="Not authorized or trade not found.")
     
-    # FIXED: Removed 'await' from the synchronous call
     db.p2p_trades.update_one(
-        {"_id": ObjectId(trade_id)},
+        {"_id": trade_obj_id},
         {"$set": {"status": "payment_confirmed", "payment_confirmed_at": datetime.now(timezone.utc)}}
     )
     return {"message": "Payment confirmed. Awaiting seller to release assets."}
@@ -169,17 +184,22 @@ async def release_crypto(
     trade_id: str,
     current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)
 ):
-    trade = await db.p2p_trades.find_one({"_id": ObjectId(trade_id)})
+    try:
+        # FIXED: Added error handling for invalid ID format
+        trade_obj_id = ObjectId(trade_id)
+    except bson_errors.InvalidId:
+        raise HTTPException(status_code=400, detail=f"Invalid trade_id format: '{trade_id}'")
+
+    # FIXED: Removed 'await' from synchronous call
+    trade = db.p2p_trades.find_one({"_id": trade_obj_id})
     if not trade or str(trade["seller_id"]) != current_user["_id"]:
         raise HTTPException(status_code=403, detail="Not authorized or trade not found.")
         
     if trade["status"] != "payment_confirmed":
         raise HTTPException(status_code=400, detail="Cannot release crypto before payment is confirmed.")
 
-    # Update trade and listing quantities
-    # FIXED: Removed 'await' from both synchronous calls
     db.p2p_trades.update_one(
-        {"_id": ObjectId(trade_id)},
+        {"_id": trade_obj_id},
         {"$set": {"status": "crypto_released", "released_at": datetime.now(timezone.utc)}}
     )
     db.p2p_listings.update_one(
