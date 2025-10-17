@@ -18,7 +18,7 @@ class Product(BaseModel):
 class StoreCreate(BaseModel):
     name: constr(min_length=3, max_length=50)
     # Subdomain sirf small letters, numbers, aur hyphens allow karega
-    subdomain: constr(min_length=3, max_length=30, regex="^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    subdomain: constr(min_length=3, max_length=30, pattern="^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 class StorePublic(BaseModel):
     name: str
