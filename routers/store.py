@@ -39,11 +39,17 @@ class Order(BaseModel):
         arbitrary_types_allowed = True
         json_encoders = {ObjectId: str}
 
-class StoreAdmin(BaseModel):
-    id: str = Field(alias="_id")
+# --- START: YEH HAI AAPKA LEGENDARY FIX ---
+# StorePublic model ko yahan define kiya gaya hai
+class StorePublic(BaseModel):
     name: str
     subdomain: str
     products: List[Product] = []
+    owner_username: str
+# --- END: LEGENDARY FIX ---
+
+class StoreAdmin(StorePublic): # StoreAdmin ab StorePublic se inherit karega
+    id: str = Field(alias="_id")
     orders: List[Order] = []
     
     class Config:
@@ -84,13 +90,9 @@ async def get_my_store_dashboard(current_user: Dict[str, Any] = Depends(auth_uti
 
 @router.post("/mystore/products", status_code=status.HTTP_201_CREATED)
 async def add_product_to_store(product: Product, current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)):
-    # --- YAHAN BADLAV KIYA GAYA HAI ---
-    # Pydantic V2 mein .dict() ki jagah .model_dump() use hota hai
-    product_data = product.model_dump(by_alias=True)
-    
     result = await db.stores.update_one(
         {"owner_id": ObjectId(current_user["_id"])},
-        {"$push": {"products": product_data}}
+        {"$push": {"products": product.model_dump(by_alias=True)}}
     )
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Your store was not found.")
@@ -102,3 +104,4 @@ async def get_store_by_subdomain(subdomain: str):
     if not store:
         raise HTTPException(status_code=404, detail="Store not found.")
     return store
+
