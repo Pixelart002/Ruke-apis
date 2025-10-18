@@ -9,12 +9,12 @@ from bson import ObjectId
 
 router = APIRouter(prefix="/stores", tags=["Decentralized Stores & E-commerce"])
 
-# --- Pydantic Models for Validation ---
+# --- Pydantic Models for Validation (V2 Compatible) ---
 class Product(BaseModel):
     name: constr(min_length=3, max_length=50)
     price: float = Field(..., gt=0)
     stock_quantity: int = Field(..., ge=0)
-    image_url: Optional[str] = None # Using str for flexibility with local paths
+    image_url: Optional[str] = None
 
 class StoreCreate(BaseModel):
     name: constr(min_length=3, max_length=50)
@@ -55,7 +55,7 @@ class StoreAdmin(BaseModel):
 @router.post("/create", status_code=status.HTTP_201_CREATED)
 async def create_store(store_data: StoreCreate, current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)):
     if await db.stores.find_one({"subdomain": store_data.subdomain}):
-        raise HTTPException(status_code=409, detail="This subdomain is already taken. Please choose another.")
+        raise HTTPException(status_code=409, detail="This subdomain is already taken.")
     if await db.stores.find_one({"owner_id": ObjectId(current_user["_id"])}):
         raise HTTPException(status_code=400, detail="You have already created a store.")
 
@@ -84,10 +84,21 @@ async def get_my_store_dashboard(current_user: Dict[str, Any] = Depends(auth_uti
 
 @router.post("/mystore/products", status_code=status.HTTP_201_CREATED)
 async def add_product_to_store(product: Product, current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)):
+    # --- YAHAN BADLAV KIYA GAYA HAI ---
+    # Pydantic V2 mein .dict() ki jagah .model_dump() use hota hai
+    product_data = product.model_dump(by_alias=True)
+    
     result = await db.stores.update_one(
         {"owner_id": ObjectId(current_user["_id"])},
-        {"$push": {"products": product.model_dump(by_alias=True)}}
+        {"$push": {"products": product_data}}
     )
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Your store was not found.")
     return {"message": f"Product '{product.name}' added."}
+
+@router.get("/{subdomain}", response_model=StorePublic)
+async def get_store_by_subdomain(subdomain: str):
+    store = await db.stores.find_one({"subdomain": subdomain})
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found.")
+    return store
