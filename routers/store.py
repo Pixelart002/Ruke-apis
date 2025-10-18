@@ -2,94 +2,57 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, constr, Field, HttpUrl
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
+from bson import ObjectId
 
 from auth import utils as auth_utils
 from database import db
-from bson import ObjectId
 
-router = APIRouter(prefix="/stores", tags=["Decentralized Stores & E-commerce"])
+router = APIRouter(prefix="/store", tags=["Ultra Enhanced Store Engine"])
 
-# --- Pydantic Models for Validation (V2 Compatible) ---
+# --- Pydantic Models for Validation ---
 class Product(BaseModel):
+    id: str = Field(default_factory=lambda: str(ObjectId()))
     name: constr(min_length=3, max_length=50)
     price: float = Field(..., gt=0)
-    stock_quantity: int = Field(..., ge=0)
-    image_url: Optional[HttpUrl] = None
+    stock: int = Field(..., ge=0)
+    description: Optional[str] = ""
+    images: List[str] = []
 
-class StoreCreate(BaseModel):
-    name: constr(min_length=3, max_length=50)
-    subdomain: constr(min_length=3, max_length=30, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-
-class OrderItem(BaseModel):
-    product_name: str
-    quantity: int
-    price: float
-
-class Order(BaseModel):
-    id: str = Field(alias="_id")
-    store_id: str
-    items: List[OrderItem]
-    total_amount: float
-    customer_email: str
-    status: str
-    created_at: datetime
-
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
-
-class StoreAdmin(BaseModel):
-    id: str = Field(alias="_id")
-    name: str
-    subdomain: str
-    products: List[Product] = []
-    orders: List[Order] = []
-    
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
-
+class Ad(BaseModel):
+    id: str = Field(default_factory=lambda: str(ObjectId()))
+    title: str
+    link: HttpUrl
+    impressions: int = 0
+    clicks: int = 0
 
 # --- API Endpoints ---
-@router.post("/create", status_code=status.HTTP_201_CREATED)
-async def create_store(store_data: StoreCreate, current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)):
-    if await db.stores.find_one({"subdomain": store_data.subdomain}):
-        raise HTTPException(status_code=409, detail="This subdomain is already taken. Please choose another.")
-    if await db.stores.find_one({"owner_id": ObjectId(current_user["_id"])}):
-        raise HTTPException(status_code=400, detail="You have already created a store.")
 
-    new_store = {
-        "owner_id": ObjectId(current_user["_id"]),
-        "owner_username": current_user["username"],
-        "name": store_data.name,
-        "subdomain": store_data.subdomain,
-        "products": [],
-        "created_at": datetime.now(timezone.utc)
-    }
-    await db.stores.insert_one(new_store)
-    return {"message": f"Store '{store_data.name}' created successfully!"}
+# --- Store Admin Endpoints ---
+@router.put("/admin")
+def update_store_info(store_data: dict, current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)):
+    # This is a placeholder. In a real app, you'd validate store_data.
+    db.stores.update_one({"owner_id": ObjectId(current_user["_id"])}, {"$set": store_data})
+    return {"message": "Store info updated successfully."}
 
-@router.get("/mystore", response_model=StoreAdmin)
-async def get_my_store_dashboard(current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)):
-    store = await db.stores.find_one({"owner_id": ObjectId(current_user["_id"])})
-    if not store:
-        raise HTTPException(status_code=404, detail="You have not created a store yet.")
-    
-    orders_cursor = db.orders.find({"store_id": store["_id"]}).sort("created_at", -1)
-    orders = await orders_cursor.to_list(length=50)
-    
-    store['orders'] = orders
-    return store
-
-@router.post("/mystore/products", status_code=status.HTTP_201_CREATED)
-async def add_product_to_store(product: Product, current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)):
-    result = await db.stores.update_one(
-        {"owner_id": ObjectId(current_user["_id"])},
-        {"$push": {"products": product.model_dump(by_alias=True)}}
-    )
-    if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="Your store was not found.")
+@router.post("/product/admin")
+def add_product(product: Product, current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)):
+    product_dict = product.model_dump()
+    db.stores.update_one({"owner_id": ObjectId(current_user["_id"])}, {"$push": {"products": product_dict}})
     return {"message": f"Product '{product.name}' added."}
 
+@router.put("/product/admin/{product_id}")
+def update_product(product_id: str, product_update: Product, current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)):
+    product_dict = product_update.model_dump()
+    db.stores.update_one(
+        {"owner_id": ObjectId(current_user["_id"]), "products.id": product_id},
+        {"$set": {"products.$": product_dict}}
+    )
+    return {"message": "Product updated."}
+
+@router.delete("/product/admin/{product_id}")
+def delete_product(product_id: str, current_user: Dict[str, Any] = Depends(auth_utils.get_current_user)):
+    db.stores.update_one(
+        {"owner_id": ObjectId(current_user["_id"])},
+        {"$pull": {"products": {"id": product_id}}}
+    )
+    return {"message": "Product deleted."}
