@@ -1,19 +1,18 @@
 # routers/store.py
-from fastapi import APIRouter, Depends, HTTPException, status, Form, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Form, UploadFile, File
 from typing import Dict, Any, Optional, List
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 from datetime import datetime, timezone
 from bson import ObjectId
 import uuid
 import os
-import json
 import qrcode
 from io import BytesIO
 import base64
 import shutil
 
 from auth import utils as auth_utils
-from database import db, user_collection
+from database import db
 
 router = APIRouter(prefix="/store", tags=["Vendor Store"])
 
@@ -31,7 +30,7 @@ class ProductCreate(BaseModel):
     price: float
     stock: int
     category: Optional[str] = "general"
-    image_url: Optional[HttpUrl] = None
+    image_url: Optional[str] = None
 
 class ProductUpdate(ProductCreate):
     pass
@@ -53,8 +52,8 @@ class DiscountCreate(BaseModel):
 
 class AdCreate(BaseModel):
     brand_name: str
-    image_url: Optional[HttpUrl]
-    target_url: Optional[HttpUrl]
+    image_url: Optional[str]
+    target_url: Optional[str]
     start_date: datetime
     end_date: datetime
 
@@ -70,7 +69,7 @@ def save_upload_file(upload_file: UploadFile, destination: str) -> str:
     file_path = os.path.join(UPLOAD_DIR, destination)
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(upload_file.file, buffer)
-    return f"/{file_path}"  # return path relative to server root
+    return f"/{file_path}"  # path relative to server root
 
 # --- Product CRUD ---
 @router.post("/products")
@@ -81,6 +80,7 @@ async def add_product(
     stock: int = Form(...),
     category: str = Form("general"),
     image: Optional[UploadFile] = File(None),
+    image_url: Optional[str] = Form(None),
     current_user: Dict = Depends(auth_utils.get_current_user)
 ):
     product_data = {
@@ -93,27 +93,16 @@ async def add_product(
         "created_at": datetime.now(timezone.utc)
     }
 
-    # Handle file upload
+    # Handle file upload or image_url
     if image:
         filename = f"{uuid.uuid4().hex}_{image.filename}"
-        image_url = save_upload_file(image, filename)
+        uploaded_path = save_upload_file(image, filename)
+        product_data["image_url"] = uploaded_path
+    elif image_url:
         product_data["image_url"] = image_url
 
     result = product_collection.insert_one(product_data)
     return {"message": "Product added successfully", "product_id": str(result.inserted_id)}
-
-@router.get("/products")
-async def list_products():
-    products = list(product_collection.find({}))
-    for p in products: p["_id"] = str(p["_id"])
-    return products
-
-@router.get("/products/{product_id}")
-async def get_product(product_id: str):
-    product = product_collection.find_one({"_id": ObjectId(product_id)})
-    if not product: raise HTTPException(status_code=404, detail="Product not found")
-    product["_id"] = str(product["_id"])
-    return product
 
 @router.put("/products/{product_id}")
 async def update_product(
@@ -124,10 +113,12 @@ async def update_product(
     stock: Optional[int] = Form(None),
     category: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None),
+    image_url: Optional[str] = Form(None),
     current_user: Dict = Depends(auth_utils.get_current_user)
 ):
     product = product_collection.find_one({"_id": ObjectId(product_id), "vendor_id": str(current_user["_id"])})
-    if not product: raise HTTPException(status_code=404, detail="Product not found or not your product")
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found or not your product")
 
     update_data = {}
     if name is not None: update_data["name"] = name
@@ -138,7 +129,8 @@ async def update_product(
 
     if image:
         filename = f"{uuid.uuid4().hex}_{image.filename}"
-        image_url = save_upload_file(image, filename)
+        update_data["image_url"] = save_upload_file(image, filename)
+    elif image_url:
         update_data["image_url"] = image_url
 
     if update_data:
@@ -146,10 +138,25 @@ async def update_product(
 
     return {"message": "Product updated successfully"}
 
+@router.get("/products")
+async def list_products():
+    products = list(product_collection.find({}))
+    for p in products: p["_id"] = str(p["_id"])
+    return products
+
+@router.get("/products/{product_id}")
+async def get_product(product_id: str):
+    product = product_collection.find_one({"_id": ObjectId(product_id)})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    product["_id"] = str(product["_id"])
+    return product
+
 @router.delete("/products/{product_id}")
 async def delete_product(product_id: str, current_user: Dict = Depends(auth_utils.get_current_user)):
     product = product_collection.find_one({"_id": ObjectId(product_id), "vendor_id": str(current_user["_id"])})
-    if not product: raise HTTPException(status_code=404, detail="Product not found or not your product")
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found or not your product")
     product_collection.delete_one({"_id": ObjectId(product_id)})
     return {"message": "Product deleted successfully"}
 
@@ -171,14 +178,16 @@ async def list_orders(current_user: Dict = Depends(auth_utils.get_current_user))
 @router.get("/orders/{order_id}")
 async def get_order(order_id: str, current_user: Dict = Depends(auth_utils.get_current_user)):
     order = order_collection.find_one({"_id": ObjectId(order_id)})
-    if not order: raise HTTPException(status_code=404, detail="Order not found")
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
     order["_id"] = str(order["_id"])
     return order
 
 @router.post("/orders/{order_id}/update-status")
 async def update_order_status(order_id: str, status_update: OrderStatusUpdate, current_user: Dict = Depends(auth_utils.get_current_user)):
     order = order_collection.find_one({"_id": ObjectId(order_id)})
-    if not order: raise HTTPException(status_code=404, detail="Order not found")
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
     order_collection.update_one({"_id": ObjectId(order_id)}, {"$set": {"status": status_update.status}})
     return {"message": f"Order status updated to {status_update.status}"}
 
@@ -186,9 +195,9 @@ async def update_order_status(order_id: str, status_update: OrderStatusUpdate, c
 @router.post("/orders/{order_id}/generate-bill")
 async def generate_bill(order_id: str):
     order = order_collection.find_one({"_id": ObjectId(order_id)})
-    if not order: raise HTTPException(status_code=404, detail="Order not found")
-      
-    # Generate QR code for order
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
     qr = qrcode.QRCode(box_size=4, border=2)
     qr.add_data(f"OrderID:{order_id}")
     qr.make(fit=True)
@@ -196,7 +205,7 @@ async def generate_bill(order_id: str):
     buffered = BytesIO()
     img.save(buffered, format="PNG")
     qr_base64 = base64.b64encode(buffered.getvalue()).decode()
-      
+
     return {
         "order_id": order_id,
         "customer_name": order["customer_name"],
