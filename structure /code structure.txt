@@ -1,0 +1,30 @@
+Ruke-apis/
+│
+├── auth/
+│   ├── __init__.py
+│   ├── router.py
+│   ├── schemas.py
+│   └── utils.py
+│
+├── routers/
+│   ├── ai.py
+│   ├── feedback.py
+│   ├── notifications.py
+│   └── users.py
+│
+├── .gitignore
+├── database.py
+├── generate_keys.py
+├── main.py
+├── Procfile
+└── requirements.txt
+
+
+
+
+
+
+
+
+
+
