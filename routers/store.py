@@ -10,6 +10,7 @@ import json
 import qrcode
 from io import BytesIO
 import base64
+import shutil
 
 from auth import utils as auth_utils
 from database import db, user_collection
@@ -61,12 +62,43 @@ class NotificationRequest(BaseModel):
     title: str
     body: str
 
+# --- Helper for file uploads ---
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+def save_upload_file(upload_file: UploadFile, destination: str) -> str:
+    file_path = os.path.join(UPLOAD_DIR, destination)
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(upload_file.file, buffer)
+    return f"/{file_path}"  # return path relative to server root
+
 # --- Product CRUD ---
 @router.post("/products")
-async def add_product(product: ProductCreate, current_user: Dict = Depends(auth_utils.get_current_user)):
-    product_data = product.dict()
-    product_data["vendor_id"] = str(current_user["_id"])
-    product_data["created_at"] = datetime.now(timezone.utc)
+async def add_product(
+    name: str = Form(...),
+    description: str = Form(...),
+    price: float = Form(...),
+    stock: int = Form(...),
+    category: str = Form("general"),
+    image: Optional[UploadFile] = File(None),
+    current_user: Dict = Depends(auth_utils.get_current_user)
+):
+    product_data = {
+        "name": name,
+        "description": description,
+        "price": price,
+        "stock": stock,
+        "category": category,
+        "vendor_id": str(current_user["_id"]),
+        "created_at": datetime.now(timezone.utc)
+    }
+
+    # Handle file upload
+    if image:
+        filename = f"{uuid.uuid4().hex}_{image.filename}"
+        image_url = save_upload_file(image, filename)
+        product_data["image_url"] = image_url
+
     result = product_collection.insert_one(product_data)
     return {"message": "Product added successfully", "product_id": str(result.inserted_id)}
 
@@ -84,10 +116,34 @@ async def get_product(product_id: str):
     return product
 
 @router.put("/products/{product_id}")
-async def update_product(product_id: str, product_update: ProductUpdate, current_user: Dict = Depends(auth_utils.get_current_user)):
+async def update_product(
+    product_id: str,
+    name: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    price: Optional[float] = Form(None),
+    stock: Optional[int] = Form(None),
+    category: Optional[str] = Form(None),
+    image: Optional[UploadFile] = File(None),
+    current_user: Dict = Depends(auth_utils.get_current_user)
+):
     product = product_collection.find_one({"_id": ObjectId(product_id), "vendor_id": str(current_user["_id"])})
     if not product: raise HTTPException(status_code=404, detail="Product not found or not your product")
-    product_collection.update_one({"_id": ObjectId(product_id)}, {"$set": product_update.dict()})
+
+    update_data = {}
+    if name is not None: update_data["name"] = name
+    if description is not None: update_data["description"] = description
+    if price is not None: update_data["price"] = price
+    if stock is not None: update_data["stock"] = stock
+    if category is not None: update_data["category"] = category
+
+    if image:
+        filename = f"{uuid.uuid4().hex}_{image.filename}"
+        image_url = save_upload_file(image, filename)
+        update_data["image_url"] = image_url
+
+    if update_data:
+        product_collection.update_one({"_id": ObjectId(product_id)}, {"$set": update_data})
+
     return {"message": "Product updated successfully"}
 
 @router.delete("/products/{product_id}")
@@ -131,7 +187,7 @@ async def update_order_status(order_id: str, status_update: OrderStatusUpdate, c
 async def generate_bill(order_id: str):
     order = order_collection.find_one({"_id": ObjectId(order_id)})
     if not order: raise HTTPException(status_code=404, detail="Order not found")
-    
+      
     # Generate QR code for order
     qr = qrcode.QRCode(box_size=4, border=2)
     qr.add_data(f"OrderID:{order_id}")
@@ -140,7 +196,7 @@ async def generate_bill(order_id: str):
     buffered = BytesIO()
     img.save(buffered, format="PNG")
     qr_base64 = base64.b64encode(buffered.getvalue()).decode()
-    
+      
     return {
         "order_id": order_id,
         "customer_name": order["customer_name"],
