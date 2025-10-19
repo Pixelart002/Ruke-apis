@@ -12,3 +12,4 @@ passlib==1.7.4
 pywebpush
 httpx
 python-multipart
+qrcode[pil]==7.4.3
