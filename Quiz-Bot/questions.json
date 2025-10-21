@@ -1,0 +1,821 @@
+{
+  "what emerging gaming model enables players to acquire cryptocurrencies or nfts as rewards for in-game activities?": {
+    "answer_letter": "A",
+    "answer_text": "Play-to-Earn",
+    "saved_at": "2025-08-06T20:27:03.191940",
+    "original_question": "What emerging gaming model enables players to acquire cryptocurrencies or NFTs as rewards for in-game activities?",
+    "usage_count": 1
+  },
+  "which technological concept broadly describes a persistent, interconnected, and immersive virtual environment where users can interact digitally?": {
+    "answer_letter": "D",
+    "answer_text": "The Metaverse",
+    "saved_at": "2025-08-06T21:02:41.383180",
+    "original_question": "Which technological concept broadly describes a persistent, interconnected, and immersive virtual environment where users can interact digitally?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? ⚡🔗": {
+    "answer_letter": "B",
+    "answer_text": "Lightning Network",
+    "saved_at": "2025-08-06T21:27:21.586295",
+    "original_question": "What do these emojis represent? ⚡🔗",
+    "usage_count": 1
+  },
+  "what is a common challenge in training large ai models where the model learns the training data too well, leading to poor generalization on new, unseen data?": {
+    "answer_letter": "C",
+    "answer_text": "Overfitting",
+    "saved_at": "2025-08-06T22:02:44.830636",
+    "original_question": "What is a common challenge in training large AI models where the model learns the training data too well, leading to poor generalization on new, unseen data?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? ⛏️🏭": {
+    "answer_letter": "E",
+    "answer_text": "Mining Farm",
+    "saved_at": "2025-08-06T22:38:06.341589",
+    "original_question": "What do these emojis represent? ⛏️🏭",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🎮🕶️": {
+    "answer_letter": "C",
+    "answer_text": "Virtual Reality",
+    "saved_at": "2025-08-06T23:14:12.361187",
+    "original_question": "What do these emojis represent? 🎮🕶️",
+    "usage_count": 1
+  },
+  "which principle of data privacy ensures personal data is collected only for specified, explicit, and legitimate purposes?": {
+    "answer_letter": "C",
+    "answer_text": "Purpose Limitation",
+    "saved_at": "2025-08-06T23:36:39.465266",
+    "original_question": "Which principle of data privacy ensures personal data is collected only for specified, explicit, and legitimate purposes?",
+    "usage_count": 1
+  },
+  "to curb inflation, what common action might a central bank undertake to reduce the money supply?": {
+    "answer_letter": "D",
+    "answer_text": "Increase the policy rate",
+    "saved_at": "2025-08-07T00:12:19.047914",
+    "original_question": "To curb inflation, what common action might a central bank undertake to reduce the money supply?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? ₿📜": {
+    "answer_letter": "D",
+    "answer_text": "Bitcoin Whitepaper",
+    "saved_at": "2025-08-07T00:23:41.181669",
+    "original_question": "What do these emojis represent? ₿📜",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 📱💳💰": {
+    "answer_letter": "B",
+    "answer_text": "Digital Wallet",
+    "saved_at": "2025-08-07T00:55:54.383193",
+    "original_question": "What do these emojis represent? 📱💳💰",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🖼️🏷️✅": {
+    "answer_letter": "C",
+    "answer_text": "Non-Fungible Token",
+    "saved_at": "2025-08-07T01:03:52.235028",
+    "original_question": "What do these emojis represent? 🖼️🏷️✅",
+    "usage_count": 1
+  },
+  "which characteristic is essential for usdt and usdc to maintain their value stability?": {
+    "answer_letter": "C",
+    "answer_text": "Transparent asset backing",
+    "saved_at": "2025-08-07T01:27:09.804695",
+    "original_question": "Which characteristic is essential for USDT and USDC to maintain their value stability?",
+    "usage_count": 1
+  },
+  "what concept in digital identity empowers individuals with full control over their personal data and identity attributes, often using blockchain?": {
+    "answer_letter": "A",
+    "answer_text": "Self-Sovereign Identity",
+    "saved_at": "2025-08-07T01:52:34.112785",
+    "original_question": "What concept in digital identity empowers individuals with full control over their personal data and identity attributes, often using blockchain?",
+    "usage_count": 1
+  },
+  "what is the primary challenge for autonomous robots operating in unstructured, dynamic environments, such as disaster recovery zones or complex industrial settings?": {
+    "answer_letter": "D",
+    "answer_text": "Adaptability to novel situations",
+    "saved_at": "2025-08-07T02:28:39.729850",
+    "original_question": "What is the primary challenge for autonomous robots operating in unstructured, dynamic environments, such as disaster recovery zones or complex industrial settings?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🏛️🤝🗳️": {
+    "answer_letter": "E",
+    "answer_text": "Decentralized Autonomous Organization",
+    "saved_at": "2025-08-07T03:05:01.584411",
+    "original_question": "What do these emojis represent? 🏛️🤝🗳️",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 💸⛓️": {
+    "answer_letter": "C",
+    "answer_text": "Decentralized Finance",
+    "saved_at": "2025-08-07T03:41:19.979155",
+    "original_question": "What do these emojis represent? 💸⛓️",
+    "usage_count": 1
+  },
+  "which emerging computing paradigm leverages quantum-mechanical phenomena like superposition and entanglement to solve complex problems intractable for classical computers?": {
+    "answer_letter": "C",
+    "answer_text": "Quantum Computing",
+    "saved_at": "2025-08-07T04:16:08.148215",
+    "original_question": "Which emerging computing paradigm leverages quantum-mechanical phenomena like superposition and entanglement to solve complex problems intractable for classical computers?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🤝✍️": {
+    "answer_letter": "B",
+    "answer_text": "Smart Contract",
+    "saved_at": "2025-08-07T05:38:41.474769",
+    "original_question": "What do these emojis represent? 🤝✍️",
+    "usage_count": 1
+  },
+  "what core characteristic defines fun token as an erc-20 standard token?": {
+    "answer_letter": "C",
+    "answer_text": "Its reliance on Ethereum blockchain",
+    "saved_at": "2025-08-07T06:15:36.375820",
+    "original_question": "What core characteristic defines FUN Token as an ERC-20 standard token?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🧠🔗": {
+    "answer_letter": "E",
+    "answer_text": "Neural Network",
+    "saved_at": "2025-08-07T07:28:50.023841",
+    "original_question": "What do these emojis represent? 🧠🔗",
+    "usage_count": 1
+  },
+  "which international body holds primary responsibility for maintaining global peace and security?": {
+    "answer_letter": "A",
+    "answer_text": "United Nations Security Council",
+    "saved_at": "2025-08-07T07:56:11.686831",
+    "original_question": "Which international body holds primary responsibility for maintaining global peace and security?",
+    "usage_count": 1
+  },
+  "what cryptographic technique uses a pair of keys, one public and one private, for secure communication and digital signatures?": {
+    "answer_letter": "C",
+    "answer_text": "Public-key cryptography",
+    "saved_at": "2025-08-07T08:32:58.115361",
+    "original_question": "What cryptographic technique uses a pair of keys, one public and one private, for secure communication and digital signatures?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? ✍️🤖": {
+    "answer_letter": "A",
+    "answer_text": "Generative AI",
+    "saved_at": "2025-08-07T09:10:25.947516",
+    "original_question": "What do these emojis represent? ✍️🤖",
+    "usage_count": 1
+  },
+  "what social engineering cyberattack relies on deceptive digital messages, often emails, to trick individuals into divulging sensitive information or performing actions?": {
+    "answer_letter": "A",
+    "answer_text": "Phishing",
+    "saved_at": "2025-08-07T09:37:45.026266",
+    "original_question": "What social engineering cyberattack relies on deceptive digital messages, often emails, to trick individuals into divulging sensitive information or performing actions?",
+    "usage_count": 1
+  },
+  "what is the primary objective of a central bank implementing quantitative easing (qe) during an economic recession?": {
+    "answer_letter": "C",
+    "answer_text": "To stimulate economic growth",
+    "saved_at": "2025-08-07T10:14:21.396369",
+    "original_question": "What is the primary objective of a central bank implementing quantitative easing (QE) during an economic recession?",
+    "usage_count": 1
+  },
+  "what is a common effect of central banks raising benchmark interest rates?": {
+    "answer_letter": "B",
+    "answer_text": "Reduced lending activity",
+    "saved_at": "2025-08-07T10:50:34.698907",
+    "original_question": "What is a common effect of central banks raising benchmark interest rates?",
+    "usage_count": 1
+  },
+  "in behavioral economics, what describes people's tendency to strongly prefer avoiding losses over acquiring equivalent gains?": {
+    "answer_letter": "E",
+    "answer_text": "Loss Aversion",
+    "saved_at": "2025-08-07T11:19:38.352912",
+    "original_question": "In behavioral economics, what describes people's tendency to strongly prefer avoiding losses over acquiring equivalent gains?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? ⚡️💰": {
+    "answer_letter": "B",
+    "answer_text": "Flash Loan",
+    "saved_at": "2025-08-07T11:55:18.101459",
+    "original_question": "What do these emojis represent? ⚡️💰",
+    "usage_count": 1
+  },
+  "what is a major hurdle for decentralized autonomous organizations (daos) to gain widespread acceptance in regulated industries?": {
+    "answer_letter": "A",
+    "answer_text": "Absence of established legal identity",
+    "saved_at": "2025-08-07T12:31:40.439177",
+    "original_question": "What is a major hurdle for Decentralized Autonomous Organizations (DAOs) to gain widespread acceptance in regulated industries?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? ⚒️🏋️‍♂️": {
+    "answer_letter": "A",
+    "answer_text": "Proof of Work",
+    "saved_at": "2025-08-07T13:08:28.220188",
+    "original_question": "What do these emojis represent? ⚒️🏋️‍♂️",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 📈↔️📉": {
+    "answer_letter": "D",
+    "answer_text": "Cryptocurrency Exchange",
+    "saved_at": "2025-08-07T13:44:38.594174",
+    "original_question": "What do these emojis represent? 📈↔️📉",
+    "usage_count": 1
+  },
+  "what is the primary consensus mechanism that secures the bitcoin network and validates transactions?": {
+    "answer_letter": "A",
+    "answer_text": "Proof of Work",
+    "saved_at": "2025-08-07T16:11:59.745979",
+    "original_question": "What is the primary consensus mechanism that secures the Bitcoin network and validates transactions?",
+    "usage_count": 1
+  },
+  "what is the primary technology underlying a self-sovereign identity (ssi) system?": {
+    "answer_letter": "D",
+    "answer_text": "Distributed ledger technology",
+    "saved_at": "2025-08-07T16:28:47.997000",
+    "original_question": "What is the primary technology underlying a self-sovereign identity (SSI) system?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 💰🌱🚜": {
+    "answer_letter": "C",
+    "answer_text": "Yield Farming",
+    "saved_at": "2025-08-07T16:51:54.001524",
+    "original_question": "What do these emojis represent? 💰🌱🚜",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 👥🤝🗳️": {
+    "answer_letter": "C",
+    "answer_text": "Decentralized Autonomous Organization",
+    "saved_at": "2025-08-07T17:17:54.519678",
+    "original_question": "What do these emojis represent? 👥🤝🗳️",
+    "usage_count": 1
+  },
+  "what is the core concept driving 'play-to-earn' models in blockchain gaming?": {
+    "answer_letter": "C",
+    "answer_text": "Earn crypto by playing games",
+    "saved_at": "2025-08-07T17:54:07.947401",
+    "original_question": "What is the core concept driving 'Play-to-Earn' models in blockchain gaming?",
+    "usage_count": 1
+  },
+  "what is the primary purpose of a virtual private network (vpn)?": {
+    "answer_letter": "C",
+    "answer_text": "Encrypt internet traffic",
+    "saved_at": "2025-08-07T19:07:00.648785",
+    "original_question": "What is the primary purpose of a Virtual Private Network (VPN)?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🏦💸": {
+    "answer_letter": "E",
+    "answer_text": "Fiat Currency",
+    "saved_at": "2025-08-07T19:23:54.504974",
+    "original_question": "What do these emojis represent? 🏦💸",
+    "usage_count": 1
+  },
+  "what is the primary method used by major stablecoins like usdt and usdc to maintain their peg to the us dollar?": {
+    "answer_letter": "D",
+    "answer_text": "Collateralized by fiat reserves",
+    "saved_at": "2025-08-07T19:59:35.130239",
+    "original_question": "What is the primary method used by major stablecoins like USDT and USDC to maintain their peg to the US Dollar?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? ❄️👛": {
+    "answer_letter": "C",
+    "answer_text": "Cold Storage",
+    "saved_at": "2025-08-07T20:34:56.759508",
+    "original_question": "What do these emojis represent? ❄️👛",
+    "usage_count": 1
+  },
+  "what fundamental concept describes a technology that initially performs worse than existing solutions but eventually displaces them due to its simplicity and lower cost?": {
+    "answer_letter": "A",
+    "answer_text": "Disruptive innovation",
+    "saved_at": "2025-08-07T21:10:25.896747",
+    "original_question": "What fundamental concept describes a technology that initially performs worse than existing solutions but eventually displaces them due to its simplicity and lower cost?",
+    "usage_count": 1
+  },
+  "what cybersecurity term describes a software vulnerability exploited before developers know about it or can patch it?": {
+    "answer_letter": "B",
+    "answer_text": "A vulnerability unknown to vendors",
+    "saved_at": "2025-08-07T21:31:32.340511",
+    "original_question": "What cybersecurity term describes a software vulnerability exploited before developers know about it or can patch it?",
+    "usage_count": 1
+  },
+  "what is the primary function of fun token within its native ecosystem?": {
+    "answer_letter": "D",
+    "answer_text": "In-game currency for entertainment",
+    "saved_at": "2025-08-07T22:06:54.717602",
+    "original_question": "What is the primary function of FUN Token within its native ecosystem?",
+    "usage_count": 1
+  },
+  "what technological advancement is expected to revolutionize data encryption and drug discovery but poses a significant threat to current cryptographic methods?": {
+    "answer_letter": "A",
+    "answer_text": "Quantum computing",
+    "saved_at": "2025-08-07T22:23:27.244851",
+    "original_question": "What technological advancement is expected to revolutionize data encryption and drug discovery but poses a significant threat to current cryptographic methods?",
+    "usage_count": 1
+  },
+  "what behavioral economics concept explains preferring smaller, immediate rewards over larger, delayed ones?": {
+    "answer_letter": "C",
+    "answer_text": "Hyperbolic discounting",
+    "saved_at": "2025-08-07T22:58:46.325609",
+    "original_question": "What behavioral economics concept explains preferring smaller, immediate rewards over larger, delayed ones?",
+    "usage_count": 1
+  },
+  "which emerging technology is most likely to significantly reshape the global job market through automation and intelligent decision-making over the next decade?": {
+    "answer_letter": "A",
+    "answer_text": "Artificial intelligence",
+    "saved_at": "2025-08-07T23:11:36.748007",
+    "original_question": "Which emerging technology is most likely to significantly reshape the global job market through automation and intelligent decision-making over the next decade?",
+    "usage_count": 1
+  },
+  "what is the intended primary outcome when a central bank increases its key policy interest rate?": {
+    "answer_letter": "A",
+    "answer_text": "To curb inflationary pressures",
+    "saved_at": "2025-08-07T23:46:56.126906",
+    "original_question": "What is the intended primary outcome when a central bank increases its key policy interest rate?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? ⛏️🏊‍♂️": {
+    "answer_letter": "B",
+    "answer_text": "Mining Pool",
+    "saved_at": "2025-08-08T00:23:19.176938",
+    "original_question": "What do these emojis represent? ⛏️🏊‍♂️",
+    "usage_count": 1
+  },
+  "which investment strategy aims to minimize risk by combining a variety of assets within a portfolio?": {
+    "answer_letter": "C",
+    "answer_text": "Diversification",
+    "saved_at": "2025-08-08T00:32:04.194187",
+    "original_question": "Which investment strategy aims to minimize risk by combining a variety of assets within a portfolio?",
+    "usage_count": 1
+  },
+  "what is the primary method used in a 'phishing' attack?": {
+    "answer_letter": "A",
+    "answer_text": "Social engineering for credentials",
+    "saved_at": "2025-08-08T00:57:49.035547",
+    "original_question": "What is the primary method used in a 'phishing' attack?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🤖📜✅": {
+    "answer_letter": "E",
+    "answer_text": "Smart Contract",
+    "saved_at": "2025-08-08T01:34:17.067303",
+    "original_question": "What do these emojis represent? 🤖📜✅",
+    "usage_count": 1
+  },
+  "which technological paradigm is most closely associated with the concept of decentralized digital identity and self-sovereign data management?": {
+    "answer_letter": "A",
+    "answer_text": "Distributed ledger technology",
+    "saved_at": "2025-08-08T02:10:27.081322",
+    "original_question": "Which technological paradigm is most closely associated with the concept of decentralized digital identity and self-sovereign data management?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 💲⚖️": {
+    "answer_letter": "B",
+    "answer_text": "Stablecoin",
+    "saved_at": "2025-08-08T02:28:55.108393",
+    "original_question": "What do these emojis represent? 💲⚖️",
+    "usage_count": 1
+  },
+  "which significant trend in the crypto space involves representing tangible assets like real estate or gold as digital tokens?": {
+    "answer_letter": "E",
+    "answer_text": "Real-world asset tokenization",
+    "saved_at": "2025-08-08T03:04:57.147911",
+    "original_question": "Which significant trend in the crypto space involves representing tangible assets like real estate or gold as digital tokens?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🔗⛓️💻": {
+    "answer_letter": "C",
+    "answer_text": "Blockchain Technology",
+    "saved_at": "2025-08-08T03:41:28.168838",
+    "original_question": "What do these emojis represent? 🔗⛓️💻",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🍴⚙️": {
+    "answer_letter": "D",
+    "answer_text": "Hard Fork",
+    "saved_at": "2025-08-08T04:18:06.100345",
+    "original_question": "What do these emojis represent? 🍴⚙️",
+    "usage_count": 1
+  },
+  "which technology is expected to enable true holographic communication and omnipresent connectivity through terahertz frequencies?": {
+    "answer_letter": "E",
+    "answer_text": "6G wireless technology",
+    "saved_at": "2025-08-08T04:54:59.396636",
+    "original_question": "Which technology is expected to enable true holographic communication and omnipresent connectivity through terahertz frequencies?",
+    "usage_count": 1
+  },
+  "what is the primary revenue model for most free-to-play (f2p) games?": {
+    "answer_letter": "D",
+    "answer_text": "In-game purchases",
+    "saved_at": "2025-08-08T05:13:14.096523",
+    "original_question": "What is the primary revenue model for most Free-to-Play (F2P) games?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 📄📜": {
+    "answer_letter": "D",
+    "answer_text": "Whitepaper",
+    "saved_at": "2025-08-08T05:30:05.860945",
+    "original_question": "What do these emojis represent? 📄📜",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🔮📊": {
+    "answer_letter": "A",
+    "answer_text": "Oracle",
+    "saved_at": "2025-08-08T06:19:21.166215",
+    "original_question": "What do these emojis represent? 🔮📊",
+    "usage_count": 1
+  },
+  "which major cryptocurrency is specifically designed to facilitate gaming and online casino platforms?": {
+    "answer_letter": "A",
+    "answer_text": "FUN",
+    "saved_at": "2025-08-08T07:07:41.066357",
+    "original_question": "Which major cryptocurrency is specifically designed to facilitate gaming and online casino platforms?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🏛️🧑‍🤝‍🧑🗳️": {
+    "answer_letter": "D",
+    "answer_text": "Decentralized Autonomous Org",
+    "saved_at": "2025-08-08T08:22:24.846041",
+    "original_question": "What do these emojis represent? 🏛️🧑‍🤝‍🧑🗳️",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 💧📊🏊": {
+    "answer_letter": "A",
+    "answer_text": "Liquidity Pool",
+    "saved_at": "2025-08-08T08:59:08.077428",
+    "original_question": "What do these emojis represent? 💧📊🏊",
+    "usage_count": 1
+  },
+  "what do these emojis represent? ⛏️💻💰": {
+    "answer_letter": "E",
+    "answer_text": "Crypto Mining",
+    "saved_at": "2025-08-08T09:36:03.640912",
+    "original_question": "What do these emojis represent? ⛏️💻💰",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🙌💎": {
+    "answer_letter": "A",
+    "answer_text": "HODL",
+    "saved_at": "2025-08-08T10:11:47.943564",
+    "original_question": "What do these emojis represent? 🙌💎",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 📊🧢": {
+    "answer_letter": "A",
+    "answer_text": "Market Cap",
+    "saved_at": "2025-08-08T10:33:29.517473",
+    "original_question": "What do these emojis represent? 📊🧢",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🤝💻📜": {
+    "answer_letter": "E",
+    "answer_text": "Smart Contract",
+    "saved_at": "2025-08-08T11:01:05.638567",
+    "original_question": "What do these emojis represent? 🤝💻📜",
+    "usage_count": 1
+  },
+  "which emerging computing paradigm relies on quantum-mechanical phenomena like superposition and entanglement?": {
+    "answer_letter": "B",
+    "answer_text": "Quantum computing principles",
+    "saved_at": "2025-08-08T13:25:32.202246",
+    "original_question": "Which emerging computing paradigm relies on quantum-mechanical phenomena like superposition and entanglement?",
+    "usage_count": 1
+  },
+  "what is the primary action a central bank takes to combat high inflation?": {
+    "answer_letter": "A",
+    "answer_text": "Raise interest rates",
+    "saved_at": "2025-08-08T14:01:55.984393",
+    "original_question": "What is the primary action a central bank takes to combat high inflation?",
+    "usage_count": 1
+  },
+  "which security method enhances password protection by requiring additional verification beyond something a user knows?": {
+    "answer_letter": "C",
+    "answer_text": "Multi-factor authentication",
+    "saved_at": "2025-08-08T14:09:31.341721",
+    "original_question": "Which security method enhances password protection by requiring additional verification beyond something a user knows?",
+    "usage_count": 1
+  },
+  "which advanced battery technology, using solid electrolytes, aims to significantly improve safety and energy density in future evs?": {
+    "answer_letter": "C",
+    "answer_text": "Solid-state batteries",
+    "saved_at": "2025-08-08T14:26:12.614071",
+    "original_question": "Which advanced battery technology, using solid electrolytes, aims to significantly improve safety and energy density in future EVs?",
+    "usage_count": 1
+  },
+  "what is the primary innovation enabling peer-to-peer (p2p) lending platforms to disrupt traditional finance?": {
+    "answer_letter": "A",
+    "answer_text": "Direct borrower-investor matching",
+    "saved_at": "2025-08-08T14:47:04.892112",
+    "original_question": "What is the primary innovation enabling Peer-to-Peer (P2P) lending platforms to disrupt traditional finance?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🐳💰": {
+    "answer_letter": "B",
+    "answer_text": "Whale",
+    "saved_at": "2025-08-08T15:23:41.549686",
+    "original_question": "What do these emojis represent? 🐳💰",
+    "usage_count": 1
+  },
+  "what is the primary characteristic of a successful ransomware attack?": {
+    "answer_letter": "A",
+    "answer_text": "Encrypts user data for payment",
+    "saved_at": "2025-08-08T16:00:35.776632",
+    "original_question": "What is the primary characteristic of a successful ransomware attack?",
+    "usage_count": 1
+  },
+  "what is a common challenge encountered when training deep learning models with insufficient data?": {
+    "answer_letter": "B",
+    "answer_text": "Overfitting to the training data",
+    "saved_at": "2025-08-08T16:31:30.982868",
+    "original_question": "What is a common challenge encountered when training deep learning models with insufficient data?",
+    "usage_count": 1
+  },
+  "what is \"staking\" in the context of proof-of-stake blockchains?": {
+    "answer_letter": "A",
+    "answer_text": "Locking crypto to validate transactions",
+    "saved_at": "2025-08-08T17:07:59.981349",
+    "original_question": "What is \"Staking\" in the context of Proof-of-Stake blockchains?",
+    "usage_count": 1
+  },
+  "which behavioral economics concept explains why investors often hold onto losing assets too long, hoping they will recover, while selling winning assets too soon?": {
+    "answer_letter": "D",
+    "answer_text": "Disposition effect",
+    "saved_at": "2025-08-18T18:04:56.380595",
+    "original_question": "Which behavioral economics concept explains why investors often hold onto losing assets too long, hoping they will recover, while selling winning assets too soon?",
+    "usage_count": 1
+  },
+  "what gaming model leverages nfts to create player-owned digital assets?": {
+    "answer_letter": "C",
+    "answer_text": "Play-to-earn",
+    "saved_at": "2025-08-18T18:32:43.178622",
+    "original_question": "What gaming model leverages NFTs to create player-owned digital assets?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 👓🎮": {
+    "answer_letter": "A",
+    "answer_text": "Virtual Reality",
+    "saved_at": "2025-08-18T19:01:09.900604",
+    "original_question": "What do these emojis represent? 👓🎮",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🎨🚫🔁": {
+    "answer_letter": "B",
+    "answer_text": "Non-Fungible Token",
+    "saved_at": "2025-08-18T19:37:10.189120",
+    "original_question": "What do these emojis represent? 🎨🚫🔁",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🚀🌌": {
+    "answer_letter": "A",
+    "answer_text": "Space Exploration",
+    "saved_at": "2025-08-18T20:12:58.096384",
+    "original_question": "What do these emojis represent? 🚀🌌",
+    "usage_count": 1
+  },
+  "what is the primary benefit of using multi-factor authentication (mfa) for online accounts?": {
+    "answer_letter": "D",
+    "answer_text": "Enhanced account security",
+    "saved_at": "2025-08-18T20:48:11.180346",
+    "original_question": "What is the primary benefit of using multi-factor authentication (MFA) for online accounts?",
+    "usage_count": 1
+  },
+  "what advanced computing paradigm integrates real-world and virtual environments, allowing physical and digital objects to coexist and interact in real-time?": {
+    "answer_letter": "B",
+    "answer_text": "Supply Chain",
+    "saved_at": "2025-08-18T21:30:23.174259",
+    "original_question": "What advanced computing paradigm integrates real-world and virtual environments, allowing physical and digital objects to coexist and interact in real-time?",
+    "usage_count": 2
+  },
+  "what do these emojis represent? 📦🔗🚚": {
+    "answer_letter": "B",
+    "answer_text": "Supply Chain",
+    "saved_at": "2025-08-18T21:34:32.487383",
+    "original_question": "What do these emojis represent? 📦🔗🚚",
+    "usage_count": 1
+  },
+  "which concept describes a network of physical objects embedded with sensors, software, and other technologies for connecting and exchanging data over the internet?": {
+    "answer_letter": "C",
+    "answer_text": "Internet of Things",
+    "saved_at": "2025-08-18T21:54:06.371309",
+    "original_question": "Which concept describes a network of physical objects embedded with sensors, software, and other technologies for connecting and exchanging data over the internet?",
+    "usage_count": 1
+  },
+  "which term describes the initial funding stage for a startup, often provided by angel investors or venture capitalists, primarily for product development and market research?": {
+    "answer_letter": "D",
+    "answer_text": "Seed Round",
+    "saved_at": "2025-08-18T22:29:30.845462",
+    "original_question": "Which term describes the initial funding stage for a startup, often provided by angel investors or venture capitalists, primarily for product development and market research?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 👓➕": {
+    "answer_letter": "B",
+    "answer_text": "Augmented Reality",
+    "saved_at": "2025-08-18T23:40:39.535977",
+    "original_question": "What do these emojis represent? 👓➕",
+    "usage_count": 1
+  },
+  "what is the primary purpose of developing a minimum viable product (mvp) in entrepreneurship?": {
+    "answer_letter": "E",
+    "answer_text": "To gather early user feedback",
+    "saved_at": "2025-08-19T00:16:04.939104",
+    "original_question": "What is the primary purpose of developing a Minimum Viable Product (MVP) in entrepreneurship?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🌍🚫🏦": {
+    "answer_letter": "B",
+    "answer_text": "Decentralized Finance",
+    "saved_at": "2025-08-19T00:52:05.815186",
+    "original_question": "What do these emojis represent? 🌍🚫🏦",
+    "usage_count": 1
+  },
+  "what is the primary monetary policy tool used by central banks to influence short-term interest rates and control inflation?": {
+    "answer_letter": "B",
+    "answer_text": "Open market operations",
+    "saved_at": "2025-08-19T01:10:06.338595",
+    "original_question": "What is the primary monetary policy tool used by central banks to influence short-term interest rates and control inflation?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🌎🔥": {
+    "answer_letter": "A",
+    "answer_text": "Global Warming",
+    "saved_at": "2025-08-19T01:45:57.375825",
+    "original_question": "What do these emojis represent? 🌎🔥",
+    "usage_count": 1
+  },
+  "what do these emojis represent? ❄️💰": {
+    "answer_letter": "B",
+    "answer_text": "Cold Wallet",
+    "saved_at": "2025-08-19T02:22:33.561081",
+    "original_question": "What do these emojis represent? ❄️💰",
+    "usage_count": 1
+  },
+  "which artificial intelligence technique involves training a model on a massive dataset to predict the next element in a sequence, often used for text and code generation?": {
+    "answer_letter": "C",
+    "answer_text": "Large Language Models",
+    "saved_at": "2025-08-19T02:57:13.409794",
+    "original_question": "Which artificial intelligence technique involves training a model on a massive dataset to predict the next element in a sequence, often used for text and code generation?",
+    "usage_count": 1
+  },
+  "what is the primary goal of a phishing attack in cybersecurity?": {
+    "answer_letter": "B",
+    "answer_text": "Stealing sensitive user data",
+    "saved_at": "2025-08-19T03:04:37.861389",
+    "original_question": "What is the primary goal of a phishing attack in cybersecurity?",
+    "usage_count": 1
+  },
+  "what is the primary implication of large-scale quantum computing for current public-key encryption?": {
+    "answer_letter": "D",
+    "answer_text": "Breaking existing crypto algorithms",
+    "saved_at": "2025-08-19T03:40:44.710012",
+    "original_question": "What is the primary implication of large-scale quantum computing for current public-key encryption?",
+    "usage_count": 1
+  },
+  "what key feature primarily differentiates stablecoins like usdt and usdc from volatile cryptocurrencies such as btc or eth?": {
+    "answer_letter": "E",
+    "answer_text": "Their value is pegged to fiat currency",
+    "saved_at": "2025-08-19T04:16:59.837188",
+    "original_question": "What key feature primarily differentiates stablecoins like USDT and USDC from volatile cryptocurrencies such as BTC or ETH?",
+    "usage_count": 1
+  },
+  "what is the most likely macroeconomic effect of a central bank significantly raising its benchmark interest rate?": {
+    "answer_letter": "D",
+    "answer_text": "Reduced borrowing  spending",
+    "saved_at": "2025-08-19T04:53:12.637001",
+    "original_question": "What is the most likely macroeconomic effect of a central bank significantly raising its benchmark interest rate?",
+    "usage_count": 1
+  },
+  "which artificial intelligence paradigm trains an agent to make a sequence of decisions in an environment to maximize cumulative reward?": {
+    "answer_letter": "D",
+    "answer_text": "Reinforcement learning",
+    "saved_at": "2025-08-19T05:08:14.455995",
+    "original_question": "Which artificial intelligence paradigm trains an agent to make a sequence of decisions in an environment to maximize cumulative reward?",
+    "usage_count": 1
+  },
+  "which ethical concern arises when ai systems make decisions based on patterns learned from biased historical data, leading to unfair outcomes for certain groups?": {
+    "answer_letter": "B",
+    "answer_text": "Algorithmic bias",
+    "saved_at": "2025-08-19T05:33:19.913282",
+    "original_question": "Which ethical concern arises when AI systems make decisions based on patterns learned from biased historical data, leading to unfair outcomes for certain groups?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? ✍️📜💡": {
+    "answer_letter": "D",
+    "answer_text": "Smart Contract",
+    "saved_at": "2025-08-19T05:58:13.077467",
+    "original_question": "What do these emojis represent? ✍️📜💡",
+    "usage_count": 1
+  },
+  "what fintech innovation often uses blockchain to enhance the efficiency of international payments?": {
+    "answer_letter": "A",
+    "answer_text": "Decentralized remittances",
+    "saved_at": "2025-08-19T06:32:29.293627",
+    "original_question": "What FinTech innovation often uses blockchain to enhance the efficiency of international payments?",
+    "usage_count": 1
+  },
+  "what is the most significant long-term challenge posed by widespread advanced robotics and automation to the global labor market?": {
+    "answer_letter": "B",
+    "answer_text": "Widespread job displacement",
+    "saved_at": "2025-08-19T07:08:57.466932",
+    "original_question": "What is the most significant long-term challenge posed by widespread advanced robotics and automation to the global labor market?",
+    "usage_count": 1
+  },
+  "what is the most significant technological challenge currently limiting the widespread adoption of truly immersive virtual reality for daily use?": {
+    "answer_letter": "D",
+    "answer_text": "Financial Independence",
+    "saved_at": "2025-08-19T07:31:05.737421",
+    "original_question": "What is the most significant technological challenge currently limiting the widespread adoption of truly immersive virtual reality for daily use?",
+    "usage_count": 2
+  },
+  "what do these emojis represent? 💰🏖️": {
+    "answer_letter": "D",
+    "answer_text": "Financial Independence",
+    "saved_at": "2025-08-19T07:35:01.295390",
+    "original_question": "What do these emojis represent? 💰🏖️",
+    "usage_count": 1
+  },
+  "what do these emojis represent? ⛏️₿": {
+    "answer_letter": "A",
+    "answer_text": "Bitcoin Mining",
+    "saved_at": "2025-08-19T08:07:30.720838",
+    "original_question": "What do these emojis represent? ⛏️₿",
+    "usage_count": 1
+  },
+  "what do these emojis represent? ⚛️💫": {
+    "answer_letter": "E",
+    "answer_text": "Quantum Physics",
+    "saved_at": "2025-08-19T08:37:54.322661",
+    "original_question": "What do these emojis represent? ⚛️💫",
+    "usage_count": 1
+  },
+  "what primary challenge prevents immediate widespread adoption of fully autonomous vehicles beyond controlled environments?": {
+    "answer_letter": "B",
+    "answer_text": "Unpredictable real-world perception",
+    "saved_at": "2025-08-19T09:11:17.180805",
+    "original_question": "What primary challenge prevents immediate widespread adoption of fully autonomous vehicles beyond controlled environments?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🔗⛓️📖": {
+    "answer_letter": "C",
+    "answer_text": "Digital Nomad",
+    "saved_at": "2025-08-19T10:03:31.508492",
+    "original_question": "What do these emojis represent? 🔗⛓️📖",
+    "usage_count": 2
+  },
+  "what do these emojis represent? 💻✈️🌍": {
+    "answer_letter": "C",
+    "answer_text": "Digital Nomad",
+    "saved_at": "2025-08-19T10:07:40.376027",
+    "original_question": "What do these emojis represent? 💻✈️🌍",
+    "usage_count": 1
+  },
+  "which method is most characteristic of ransomware attacks, aiming to coerce payment from victims?": {
+    "answer_letter": "D",
+    "answer_text": "Encrypting critical files",
+    "saved_at": "2025-08-19T10:39:56.107431",
+    "original_question": "Which method is most characteristic of ransomware attacks, aiming to coerce payment from victims?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🛒💻": {
+    "answer_letter": "C",
+    "answer_text": "Online Shopping",
+    "saved_at": "2025-08-19T11:17:02.065804",
+    "original_question": "What do these emojis represent? 🛒💻",
+    "usage_count": 1
+  },
+  "what is the most significant privacy concern surrounding the future widespread adoption of advanced brain-computer interfaces (bci)?": {
+    "answer_letter": "A",
+    "answer_text": "Unauthorized thought access",
+    "saved_at": "2025-08-19T11:46:06.911648",
+    "original_question": "What is the most significant privacy concern surrounding the future widespread adoption of advanced brain-computer interfaces (BCI)?",
+    "usage_count": 1
+  },
+  "which social engineering tactic primarily exploits a victim's panic or fear of immediate data loss to coerce them into unauthorized actions?": {
+    "answer_letter": "D",
+    "answer_text": "Scareware operations",
+    "saved_at": "2025-08-19T12:22:29.939773",
+    "original_question": "Which social engineering tactic primarily exploits a victim's panic or fear of immediate data loss to coerce them into unauthorized actions?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🧠💡": {
+    "answer_letter": "B",
+    "answer_text": "Artificial Intelligence",
+    "saved_at": "2025-08-19T12:58:52.174167",
+    "original_question": "What do these emojis represent? 🧠💡",
+    "usage_count": 1
+  },
+  "which major cryptocurrency primarily focuses on enhancing the online gaming and gambling experience?": {
+    "answer_letter": "B",
+    "answer_text": "FUN",
+    "saved_at": "2025-08-19T13:24:58.769413",
+    "original_question": "Which major cryptocurrency primarily focuses on enhancing the online gaming and gambling experience?",
+    "usage_count": 1
+  },
+  "what do these emojis represent? 🔓💥": {
+    "answer_letter": "D",
+    "answer_text": "Data Breach",
+    "saved_at": "2025-08-19T14:01:22.925237",
+    "original_question": "What do these emojis represent? 🔓💥",
+    "usage_count": 1
+  },
+  "what is the primary method used by phishing attacks to trick users into revealing sensitive information?": {
+    "answer_letter": "D",
+    "answer_text": "Sending deceptive communications",
+    "saved_at": "2025-08-19T14:37:38.185474",
+    "original_question": "What is the primary method used by phishing attacks to trick users into revealing sensitive information?",
+    "usage_count": 1
+  }
+}

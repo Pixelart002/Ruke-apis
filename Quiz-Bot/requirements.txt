@@ -1,0 +1,9 @@
+# Cross-platform requirements for Quiz Bot Manager
+# Works on: Windows, Linux, macOS, Termux, VPS
+
+# Main dependency
+telethon==1.34.0
+
+# Telethon dependencies (automatically installed)
+# pyaes
+# rsa
