@@ -42,7 +42,7 @@ TOOL_REGISTRY = {
         "name": "Mistral AI", "description": "Creative text, conversations, explanations.",
         "base_url": "https://mistral-ai-three.vercel.app/", "method": "GET",
         "params": {"id": "{fullname}", "question": "{prompt}"},
-        "response_is_plain_text": True, "response_mapping": {"type": "text"}
+        "response_is_plain_text": True, "response_mapping": {"type": "text","path" : "answer"}
     }
 }
 

@@ -1,80 +1,70 @@
-# routers/store.py
 from fastapi import APIRouter, Depends, HTTPException, status, Form, UploadFile, File
-from typing import Dict, Any, Optional, List
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, constr, Field, HttpUrl
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 from bson import ObjectId
 import uuid
 import os
-import json
-import qrcode
-from io import BytesIO
-import base64
 import shutil
 
 from auth import utils as auth_utils
-from database import db, user_collection
+from database import db
 
-router = APIRouter(prefix="/store", tags=["Vendor Store"])
+router = APIRouter(prefix="/store", tags=["Ultra Enhanced Store Engine"])
 
-# --- MongoDB Collections ---
-product_collection = db["products"]
-order_collection = db["orders"]
-discount_collection = db["discounts"]
-ads_collection = db["ads"]
-catalog_collection = db["catalogs"]
+# --- File Upload Setup ---
+UPLOAD_DIR = "public/uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# --- Schemas ---
-class ProductCreate(BaseModel):
+def save_upload_file(upload_file: UploadFile) -> str:
+    filename = f"{uuid.uuid4().hex}_{upload_file.filename}"
+    file_path = os.path.join(UPLOAD_DIR, filename)
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(upload_file.file, buffer)
+    # Assuming 'public' is the static directory
+    return f"/uploads/{filename}" 
+
+# --- Pydantic Models ---
+class Product(BaseModel):
+    id: str = Field(default_factory=lambda: str(ObjectId()))
     name: str
     description: str
     price: float
     stock: int
-    category: Optional[str] = "general"
-    image_url: Optional[HttpUrl] = None
+    category: str
+    image_url: Optional[str] = None
 
-class ProductUpdate(ProductCreate):
-    pass
-
-class OrderCreate(BaseModel):
-    products: List[Dict[str, Any]]  # [{"product_id": "", "quantity": 2}]
-    customer_name: str
-    customer_email: str
-    customer_phone: str
-    address: str
-
-class OrderStatusUpdate(BaseModel):
-    status: str  # Pending, Shipped, Delivered, Cancelled
-
-class DiscountCreate(BaseModel):
-    code: str
-    percentage: float
-    valid_until: Optional[datetime] = None
-
-class AdCreate(BaseModel):
+class Ad(BaseModel):
+    id: str = Field(default_factory=lambda: str(ObjectId()))
     brand_name: str
     image_url: Optional[HttpUrl]
-    target_url: Optional[HttpUrl]
+    target_url: HttpUrl
     start_date: datetime
     end_date: datetime
+    impressions: int = 0
+    clicks: int = 0
 
-class NotificationRequest(BaseModel):
-    title: str
-    body: str
+class Store(BaseModel):
+    owner_id: ObjectId
+    products: List[Product] = []
+    ads: List[Ad] = []
+    webpush_subscriptions: List[Any] = [] # Storing webpush subs
 
-# --- Helper for file uploads ---
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+    class Config:
+        arbitrary_types_allowed = True
 
-def save_upload_file(upload_file: UploadFile, destination: str) -> str:
-    file_path = os.path.join(UPLOAD_DIR, destination)
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(upload_file.file, buffer)
-    return f"/{file_path}"  # return path relative to server root
+# --- API Endpoints ---
+def get_user_store(user_id: ObjectId):
+    store = db.stores.find_one({"owner_id": user_id})
+    if not store:
+        # Create a default store if it doesn't exist
+        new_store = Store(owner_id=user_id).model_dump()
+        db.stores.insert_one(new_store)
+        return new_store
+    return store
 
-# --- Product CRUD ---
-@router.post("/products")
-async def add_product(
+@router.post("/product/admin")
+def add_product(
     name: str = Form(...),
     description: str = Form(...),
     price: float = Form(...),
@@ -83,173 +73,54 @@ async def add_product(
     image: Optional[UploadFile] = File(None),
     current_user: Dict = Depends(auth_utils.get_current_user)
 ):
-    product_data = {
-        "name": name,
-        "description": description,
-        "price": price,
-        "stock": stock,
-        "category": category,
-        "vendor_id": str(current_user["_id"]),
-        "created_at": datetime.now(timezone.utc)
-    }
-
-    # Handle file upload
+    user_id = ObjectId(current_user["_id"])
+    product_data = Product(name=name, description=description, price=price, stock=stock, category=category)
     if image:
-        filename = f"{uuid.uuid4().hex}_{image.filename}"
-        image_url = save_upload_file(image, filename)
-        product_data["image_url"] = image_url
+        product_data.image_url = save_upload_file(image)
+    
+    db.stores.update_one(
+        {"owner_id": user_id},
+        {"$push": {"products": product_data.model_dump()}},
+        upsert=True
+    )
+    return {"message": f"Product '{name}' added."}
 
-    result = product_collection.insert_one(product_data)
-    return {"message": "Product added successfully", "product_id": str(result.inserted_id)}
+@router.put("/product/admin/{product_id}")
+def update_product(product_id: str, product_update: Product, current_user: Dict = Depends(auth_utils.get_current_user)):
+    db.stores.update_one(
+        {"owner_id": ObjectId(current_user["_id"]), "products.id": product_id},
+        {"$set": {"products.$": product_update.model_dump()}}
+    )
+    return {"message": "Product updated."}
 
-@router.get("/products")
-async def list_products():
-    products = list(product_collection.find({}))
-    for p in products: p["_id"] = str(p["_id"])
-    return products
+@router.delete("/product/admin/{product_id}")
+def delete_product(product_id: str, current_user: Dict = Depends(auth_utils.get_current_user)):
+    db.stores.update_one(
+        {"owner_id": ObjectId(current_user["_id"])},
+        {"$pull": {"products": {"id": product_id}}}
+    )
+    return {"message": "Product deleted."}
 
-@router.get("/products/{product_id}")
-async def get_product(product_id: str):
-    product = product_collection.find_one({"_id": ObjectId(product_id)})
-    if not product: raise HTTPException(status_code=404, detail="Product not found")
-    product["_id"] = str(product["_id"])
-    return product
+@router.get("/admin")
+def get_store_admin_data(current_user: Dict = Depends(auth_utils.get_current_user)):
+    store = get_user_store(ObjectId(current_user["_id"]))
+    store["_id"] = str(store["_id"])
+    store["owner_id"] = str(store["owner_id"])
+    return store
+```
 
-@router.put("/products/{product_id}")
-async def update_product(
-    product_id: str,
-    name: Optional[str] = Form(None),
-    description: Optional[str] = Form(None),
-    price: Optional[float] = Form(None),
-    stock: Optional[int] = Form(None),
-    category: Optional[str] = Form(None),
-    image: Optional[UploadFile] = File(None),
-    current_user: Dict = Depends(auth_utils.get_current_user)
-):
-    product = product_collection.find_one({"_id": ObjectId(product_id), "vendor_id": str(current_user["_id"])})
-    if not product: raise HTTPException(status_code=404, detail="Product not found or not your product")
+---
+### ## Step 2: Frontend - Naye Pages Banayein
 
-    update_data = {}
-    if name is not None: update_data["name"] = name
-    if description is not None: update_data["description"] = description
-    if price is not None: update_data["price"] = price
-    if stock is not None: update_data["stock"] = stock
-    if category is not None: update_data["category"] = category
+Ab hum user ko store banane aur manage karne ke liye professional UI banayenge.
 
-    if image:
-        filename = f"{uuid.uuid4().hex}_{image.filename}"
-        image_url = save_upload_file(image, filename)
-        update_data["image_url"] = image_url
+#### **A. Sidebar Mein Link Add Karein (`js/main.js`)**
+Apni `js/main.js` file ke andar, `renderInitialHTML` function mein, sidebar ke `<nav>` section mein "FEEDBACK" ke baad yeh naya link add karein.
 
-    if update_data:
-        product_collection.update_one({"_id": ObjectId(product_id)}, {"$set": update_data})
+```javascript
+// Is line ko main.js ke renderInitialHTML function ke andar, 'feedback' link ke baad daalein
+<a href="#" class="nav-link flex items-center p-3 rounded-md" data-page="store">
+    <svg class="h-5 w-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
+    MY STORE
+</a>
 
-    return {"message": "Product updated successfully"}
-
-@router.delete("/products/{product_id}")
-async def delete_product(product_id: str, current_user: Dict = Depends(auth_utils.get_current_user)):
-    product = product_collection.find_one({"_id": ObjectId(product_id), "vendor_id": str(current_user["_id"])})
-    if not product: raise HTTPException(status_code=404, detail="Product not found or not your product")
-    product_collection.delete_one({"_id": ObjectId(product_id)})
-    return {"message": "Product deleted successfully"}
-
-# --- Orders ---
-@router.post("/orders")
-async def create_order(order: OrderCreate):
-    order_data = order.dict()
-    order_data["status"] = "Pending"
-    order_data["created_at"] = datetime.now(timezone.utc)
-    result = order_collection.insert_one(order_data)
-    return {"message": "Order placed successfully", "order_id": str(result.inserted_id)}
-
-@router.get("/orders")
-async def list_orders(current_user: Dict = Depends(auth_utils.get_current_user)):
-    orders = list(order_collection.find({"vendor_id": str(current_user["_id"])}))
-    for o in orders: o["_id"] = str(o["_id"])
-    return orders
-
-@router.get("/orders/{order_id}")
-async def get_order(order_id: str, current_user: Dict = Depends(auth_utils.get_current_user)):
-    order = order_collection.find_one({"_id": ObjectId(order_id)})
-    if not order: raise HTTPException(status_code=404, detail="Order not found")
-    order["_id"] = str(order["_id"])
-    return order
-
-@router.post("/orders/{order_id}/update-status")
-async def update_order_status(order_id: str, status_update: OrderStatusUpdate, current_user: Dict = Depends(auth_utils.get_current_user)):
-    order = order_collection.find_one({"_id": ObjectId(order_id)})
-    if not order: raise HTTPException(status_code=404, detail="Order not found")
-    order_collection.update_one({"_id": ObjectId(order_id)}, {"$set": {"status": status_update.status}})
-    return {"message": f"Order status updated to {status_update.status}"}
-
-# --- Billing & QR Codes ---
-@router.post("/orders/{order_id}/generate-bill")
-async def generate_bill(order_id: str):
-    order = order_collection.find_one({"_id": ObjectId(order_id)})
-    if not order: raise HTTPException(status_code=404, detail="Order not found")
-      
-    # Generate QR code for order
-    qr = qrcode.QRCode(box_size=4, border=2)
-    qr.add_data(f"OrderID:{order_id}")
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    buffered = BytesIO()
-    img.save(buffered, format="PNG")
-    qr_base64 = base64.b64encode(buffered.getvalue()).decode()
-      
-    return {
-        "order_id": order_id,
-        "customer_name": order["customer_name"],
-        "products": order["products"],
-        "status": order["status"],
-        "qr_code_base64": qr_base64
-    }
-
-# --- Discounts ---
-@router.post("/discounts")
-async def add_discount(discount: DiscountCreate):
-    discount_collection.insert_one(discount.dict())
-    return {"message": "Discount added successfully"}
-
-@router.get("/discounts")
-async def list_discounts():
-    discounts = list(discount_collection.find({}))
-    for d in discounts: d["_id"] = str(d["_id"])
-    return discounts
-
-@router.delete("/discounts/{discount_id}")
-async def delete_discount(discount_id: str):
-    discount_collection.delete_one({"_id": ObjectId(discount_id)})
-    return {"message": "Discount deleted successfully"}
-
-# --- Catalogs ---
-@router.get("/catalog")
-async def get_catalog():
-    catalog_items = list(product_collection.find({}))
-    for c in catalog_items: c["_id"] = str(c["_id"])
-    return {"catalog": catalog_items}
-
-@router.post("/catalog/share")
-async def share_catalog():
-    slug = str(uuid.uuid4())
-    catalog_collection.insert_one({"slug": slug, "created_at": datetime.now(timezone.utc)})
-    catalog_url = f"https://open-feliza-pixelart002-78fb4fe8.koyeb.app/store/catalog/shared/{slug}"
-    return {"catalog_url": catalog_url}
-
-# --- Ads ---
-@router.post("/ads")
-async def create_ad(ad: AdCreate):
-    ads_collection.insert_one(ad.dict())
-    return {"message": "Ad created successfully"}
-
-@router.get("/ads")
-async def list_ads():
-    ads = list(ads_collection.find({}))
-    for a in ads: a["_id"] = str(a["_id"])
-    return ads
-
-# --- Notifications ---
-@router.post("/notify")
-async def send_notification(notification: NotificationRequest):
-    # Placeholder: integrate with push notification logic
-    return {"message": "Notification sent (placeholder)", "title": notification.title}
