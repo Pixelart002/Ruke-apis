@@ -107,20 +107,3 @@ def get_store_admin_data(current_user: Dict = Depends(auth_utils.get_current_use
     store["_id"] = str(store["_id"])
     store["owner_id"] = str(store["owner_id"])
     return store
-```
-
----
-### ## Step 2: Frontend - Naye Pages Banayein
-
-Ab hum user ko store banane aur manage karne ke liye professional UI banayenge.
-
-#### **A. Sidebar Mein Link Add Karein (`js/main.js`)**
-Apni `js/main.js` file ke andar, `renderInitialHTML` function mein, sidebar ke `<nav>` section mein "FEEDBACK" ke baad yeh naya link add karein.
-
-```javascript
-// Is line ko main.js ke renderInitialHTML function ke andar, 'feedback' link ke baad daalein
-<a href="#" class="nav-link flex items-center p-3 rounded-md" data-page="store">
-    <svg class="h-5 w-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
-    MY STORE
-</a>
-
