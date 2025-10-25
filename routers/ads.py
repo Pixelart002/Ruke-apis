@@ -21,18 +21,16 @@ def save_upload_file(upload_file: UploadFile) -> str:
         shutil.copyfileobj(upload_file.file, buffer)
     return f"/uploads/{filename}"
 
-
 # --- Pydantic Ad Model ---
 class Ad(BaseModel):
     id: str = Field(default_factory=lambda: str(ObjectId()))
     brand_name: str
-    image_url: Optional[HttpUrl]
-    target_url: HttpUrl
+    image_url: Optional[str]  # Fixed: HttpUrl -> str
+    target_url: str            # Fixed: HttpUrl -> str
     start_date: datetime
     end_date: datetime
     impressions: int = 0
     clicks: int = 0
-
 
 # --- Helper to get existing store only ---
 def get_user_store(user_id: ObjectId):
@@ -40,7 +38,6 @@ def get_user_store(user_id: ObjectId):
     if not store:
         raise HTTPException(status_code=404, detail="Store not found.")
     return store
-
 
 # --- CRUD Endpoints for Ads ---
 
@@ -61,17 +58,16 @@ def add_ad(
     ad_data = Ad(
         brand_name=brand_name,
         image_url=image_url,
-        target_url=target_url,
+        target_url=str(target_url),
         start_date=start_date,
         end_date=end_date
     )
 
     db.stores.update_one(
         {"owner_id": user_id},
-        {"$push": {"ads": ad_data.model_dump()}}
+        {"$push": {"ads": ad_data.dict()}}  # Fixed: model_dump() -> dict()
     )
     return {"message": f"Ad '{brand_name}' added."}
-
 
 @router.put("/ad/admin/{ad_id}")
 def update_ad(
@@ -85,12 +81,11 @@ def update_ad(
 
     result = db.stores.update_one(
         {"owner_id": user_id, "ads.id": ad_id},
-        {"$set": {"ads.$": ad_update.model_dump()}}
+        {"$set": {"ads.$": ad_update.dict()}}  # Fixed
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Ad not found.")
     return {"message": "Ad updated successfully."}
-
 
 @router.delete("/ad/admin/{ad_id}")
 def delete_ad(
@@ -109,7 +104,6 @@ def delete_ad(
         raise HTTPException(status_code=404, detail="Ad not found.")
     return {"message": "Ad deleted successfully."}
 
-
 @router.get("/ad/admin")
 def list_ads(current_user: Dict = Depends(auth_utils.get_current_user)):
     """List all ads of owner"""
@@ -117,7 +111,6 @@ def list_ads(current_user: Dict = Depends(auth_utils.get_current_user)):
     store = get_user_store(user_id)
     ads = store.get("ads", [])
     return {"ads": ads}
-
 
 @router.post("/ad/view/{ad_id}")
 def track_ad_view(ad_id: str):
@@ -129,7 +122,6 @@ def track_ad_view(ad_id: str):
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Ad not found.")
     return {"message": "Impression recorded."}
-
 
 @router.post("/ad/click/{ad_id}")
 def track_ad_click(ad_id: str):
