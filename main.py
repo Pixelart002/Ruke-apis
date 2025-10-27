@@ -7,8 +7,6 @@ from routers.users import router as users_router
 from routers.ai import router as ai_router
 from routers.notifications import router as notifications_router
 from routers.feedback import router as feedback_router
-from routers.store import router as store_router
-from routers.ads import router as ads_router
 
 
 
@@ -37,9 +35,6 @@ app.include_router(users_router)
 app.include_router(ai_router)
 app.include_router(notifications_router)
 app.include_router(feedback_router)
-app.include_router(store_router)
-app.include_router(ads_router)
-
 
 
 
