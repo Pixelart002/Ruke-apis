@@ -1,3 +1,4 @@
+import os
 import httpx
 import json
 import uuid
@@ -6,13 +7,12 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Form, UploadFile, File
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
-
 from auth import utils as auth_utils
 from database import db
 
 router = APIRouter(prefix="/ai", tags=["AI Core"])
 
-# --- RAG Knowledge Base & System Prompts ---
+# --- Tool Registry ---
 TOOL_REGISTRY = {
     "image_generation_midjourney": {
         "name": "MidJourney",
@@ -21,7 +21,7 @@ TOOL_REGISTRY = {
         "method": "POST",
         "headers": {"Authorization": "Bearer vasarai"},
         "params": {"message": "{prompt}"},
-        "response_mapping": {"type": "image_url", "path": "cdn_url"}
+        "response_mapping": {"type": "image_url", "path": "cdn_url"},
     },
     "image_generation_flux": {
         "name": "Flux-Schnell",
@@ -29,7 +29,7 @@ TOOL_REGISTRY = {
         "base_url": "https://flux-schnell.hello-kaiiddo.workers.dev/img",
         "method": "GET",
         "params": {"prompt": "{prompt}"},
-        "response_is_image_url": True
+        "response_is_image_url": True,
     },
     "code_generation": {
         "name": "Code Generator",
@@ -39,9 +39,13 @@ TOOL_REGISTRY = {
         "params": {
             "q": "{prompt}",
             "model": "openai",
-            "system": "You are a YUKU AI code generation module. If asked for a website, provide a JSON object with filenames as keys (e.g., 'index.html', 'style.css') and the complete code as string values. For single code snippets, use markdown with language identifiers."
+            "system": (
+                "You are a YUKU AI code generation module. If asked for a website, "
+                "provide a JSON object with filenames as keys (e.g., 'index.html', 'style.css') "
+                "and the complete code as string values. For single code snippets, use markdown."
+            ),
         },
-        "response_mapping": {"type": "code", "path": "response"}
+        "response_mapping": {"type": "code", "path": "response"},
     },
     "creative_writing_mistral": {
         "name": "Mistral AI",
@@ -50,24 +54,38 @@ TOOL_REGISTRY = {
         "method": "GET",
         "params": {"id": "{fullname}", "question": "{prompt}"},
         "response_is_plain_text": True,
-        "response_mapping": {"type": "text", "path": "answer"}
-    }
+        "response_mapping": {"type": "text", "path": "answer"},
+    },
 }
 
-# --- Rich UI Templates ---
+# --- HTML Templates (Enhanced) ---
 HTML_TEMPLATES = {
-    # note: {url} will be appended with ?t={ts} so download and preview are the same resource with timestamp cache-bust
-    "image_preview_card": """<div class="glass-panel p-4 my-4 rounded-lg"><p class="text-sm text-text-secondary mb-2">Image Preview:</p><img src="{url}" class="rounded-md max-w-full"><div class="mt-4"><a href="{url}" download="{filename}" class="tactical-btn py-2 px-4 rounded-md text-sm inline-flex items-center"><svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V3" /></svg>Download</a></div></div>""",
-    "info_card": """<div class="glass-panel border-l-4 border-yellow-400 p-4 my-4 rounded-lg"><p class="text-yellow-200 text-sm font-bold">Important Information</p><p class="text-text-primary text-sm mt-2">{message}</p></div>""",
-    "code_project_card": """<div class="glass-panel border-l-4 border-accent-green p-4 my-4 rounded-lg"><p class="text-accent-green text-sm font-bold">Code Project Hosted</p><p class="text-text-primary text-sm mt-2">Your project is now live in a secure sandbox. You can share this link.</p><div class="mt-4"><a href="{url}" target="_blank" class="tactical-btn py-2 px-4 rounded-md text-sm inline-flex items-center"><svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>View Preview</a></div></div>"""
+    "image_preview_card": """
+    <div class="glass-panel backdrop-blur-lg bg-[#0d0d0d80] p-4 my-4 rounded-2xl shadow-xl border border-gray-700">
+        <h3 class="text-lg font-semibold text-white mb-2">🖼️ Generated Image Preview</h3>
+        <img src="{url}" alt="Generated Image" class="rounded-xl border border-gray-600 max-w-full mx-auto">
+        <div class="flex justify-between items-center mt-4">
+            <p class="text-gray-400 text-xs">Generated at: {timestamp}</p>
+            <a href="{url}" download="{filename}" 
+               class="bg-gradient-to-r from-purple-500 to-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:opacity-90">
+               ⬇️ Download
+            </a>
+        </div>
+    </div>
+    """,
+    "info_card": """
+    <div class="glass-panel border-l-4 border-yellow-400 p-4 my-4 rounded-xl bg-[#1a1a1a80] shadow-md">
+        <p class="text-yellow-300 text-sm font-bold">⚠️ Important Info</p>
+        <p class="text-gray-300 text-sm mt-2">{message}</p>
+    </div>
+    """,
 }
 
-# --- Helper Functions ---
+# --- Chat Utilities ---
 def get_chat_history(chat_id: str):
     if not chat_id:
         return []
     return list(db.chat_histories.find({"chat_id": chat_id}).sort("timestamp", -1).limit(4))
-
 
 def save_to_history(chat_id: str, user_prompt: str, yuku_response: Dict):
     if not chat_id:
@@ -85,144 +103,110 @@ def save_to_history(chat_id: str, user_prompt: str, yuku_response: Dict):
         "timestamp": datetime.now(timezone.utc)
     })
 
-
+# --- AI Router Decision Engine ---
 async def get_router_ai_decision(system_prompt: str) -> Dict:
+    """Gets structured JSON decision from Mistral router API."""
     router_url = f"https://mistral-ai-three.vercel.app/?id=yuku-router-v3&question={quote_plus(system_prompt)}"
     async with httpx.AsyncClient() as client:
         try:
             res = await client.get(router_url, timeout=45.0)
             res.raise_for_status()
-            decision_str = res.text.strip()
-            # remove code fences if present
-            decision_str = decision_str.replace("```json", "").replace("```", "").strip()
-            return json.loads(decision_str)
+            data = res.json()
+            answer_text = data.get("answer", "").replace("\\n", "\n").strip()
+            return json.loads(answer_text) if answer_text else {}
         except Exception:
             return {}
 
-
 async def choose_tool_and_generate_chips(user_prompt: str, history: List[Dict]) -> Dict:
-    tool_descriptions = "\n".join([f"- {name}: {details['description']}" for name, details in TOOL_REGISTRY.items()])
-    # guard empty prompt
-    safe_prompt = (user_prompt or "").strip()
-    last_word = safe_prompt.split()[-1] if safe_prompt else ""
-    system_prompt = f"""You are YUKU, an AI assistant. Your role is to assist users with tasks by choosing the best tool. Based on the user's prompt, choose a tool and generate 3 relevant follow-up suggestions ('chips').
-Respond ONLY with a valid JSON object: {{"tool_name": "...", "prompt_for_tool": "...", "chips": ["...", "...", "..."]}}.
+    """Selects best tool and generates smart chip suggestions."""
+    tool_descriptions = "\n".join(
+        [f"- {name}: {details['description']}" for name, details in TOOL_REGISTRY.items()]
+    )
+    system_prompt = f"""
+You are YUKU, an AI assistant. Based on user input, select the most suitable tool and generate 3 relevant suggestions.
+Respond ONLY with valid JSON:
+{{"tool_name": "...", "prompt_for_tool": "...", "chips": ["...", "...", "..."]}}
 Tools: {tool_descriptions}
-LATEST User Prompt: "{safe_prompt}"
-"""
+User Prompt: "{user_prompt}"
+    """.strip()
+
     decision = await get_router_ai_decision(system_prompt)
-    if not decision.get("tool_name") or decision.get("tool_name") not in TOOL_REGISTRY:
-        if any(word in safe_prompt.lower() for word in ["draw", "image", "photo", "picture", "generate image", "render"]):
-            decision["tool_name"] = "image_generation_midjourney"
-        else:
-            decision["tool_name"] = "creative_writing_mistral"
-    if not decision.get("prompt_for_tool"):
-        decision["prompt_for_tool"] = safe_prompt or "Please clarify the user's request."
-    if not decision.get("chips"):
-        fallback_chip_1 = f"Explain '{last_word}' more" if last_word else "Explain this further"
-        decision["chips"] = [fallback_chip_1, "Generate an image for this", "Give step-by-step instructions"]
+    if not decision.get("tool_name") or decision["tool_name"] not in TOOL_REGISTRY:
+        decision["tool_name"] = (
+            "image_generation_midjourney"
+            if any(x in user_prompt.lower() for x in ["draw", "image", "photo"])
+            else "creative_writing_mistral"
+        )
+    decision.setdefault("prompt_for_tool", user_prompt)
+    decision.setdefault("chips", ["Explain more", "Generate image", "Summarize it"])
     return decision
 
-# --- API Endpoints ---
-
-
-@router.get("/tools")
-async def get_tools_list():
-    return TOOL_REGISTRY
-
-
+# --- Main Ask Endpoint ---
 @router.post("/ask")
 async def ask_yuku_mcp(
     prompt: str = Form(...),
     chat_id: str = Form(...),
     tool_override: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
-    current_user: Dict = Depends(auth_utils.get_current_user)
+    current_user: Dict = Depends(auth_utils.get_current_user),
 ):
-    # If file provided, include filename context (no file saving)
+    """Unified endpoint for handling all AI requests (chat, image, code)."""
     if file:
-        prompt = f"Using the uploaded file '{file.filename}' as context, the user's prompt is: {prompt}"
+        prompt = f"Using uploaded file '{file.filename}', user's prompt: {prompt}"
 
     history = get_chat_history(chat_id)
     user_fullname = current_user.get("fullname", "User")
 
-    if tool_override in TOOL_REGISTRY:
-        decision = {"tool_name": tool_override, "prompt_for_tool": prompt}
-    else:
-        decision = await choose_tool_and_generate_chips(prompt, history)
+    decision = (
+        {"tool_name": tool_override, "prompt_for_tool": prompt}
+        if tool_override in TOOL_REGISTRY
+        else await choose_tool_and_generate_chips(prompt, history)
+    )
 
     chosen_tool = decision.get("tool_name", "creative_writing_mistral")
     prompt_for_tool = decision.get("prompt_for_tool", prompt)
     chips = decision.get("chips", [])
-
     tool = TOOL_REGISTRY[chosen_tool]
-    yuku_response: Dict[str, Any] = {}
+
+    yuku_response = {}
 
     async with httpx.AsyncClient(timeout=120.0) as client:
         try:
-            # placeholders: use quote_plus for safe query values
-            placeholders = {
-                "prompt": quote_plus(prompt_for_tool or ""),
-                "fullname": quote_plus(user_fullname or "")
-            }
+            placeholders = {"prompt": quote_plus(prompt_for_tool), "fullname": quote_plus(user_fullname)}
             formatted_params = {k: v.format(**placeholders) for k, v in tool.get("params", {}).items()}
 
-            # POST vs GET flow
-            if tool["method"].upper() == "POST":
-                # special-case MidJourney-like endpoints that expect message as query param
-                if "message" in formatted_params:
-                    full_url = f"{tool['base_url']}?message={formatted_params['message']}"
-                    api_response = await client.post(full_url, headers=tool.get("headers", {}))
-                else:
-                    api_response = await client.post(tool["base_url"], json=formatted_params, headers=tool.get("headers", {}))
-            else:  # GET
-                # NOTE: formatted_params may contain already-encoded values
+            # Perform API request
+            if tool["method"] == "POST":
+                api_response = await client.post(
+                    tool["base_url"], json=formatted_params, headers=tool.get("headers", {})
+                )
+            else:
                 api_response = await client.get(tool["base_url"], params=formatted_params)
 
             api_response.raise_for_status()
 
-            # timestamp for cache-busting and consistent download filename
-            ts = int(datetime.now(timezone.utc).timestamp())
-
+            # Response Handling
             if tool.get("response_is_image_url"):
-                # many image endpoints redirect to a final URL — use the response URL (final)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 img_url = str(api_response.url)
-                img_url_with_ts = f"{img_url}?t={ts}"
-                filename = f"yuku_{ts}.png"
-                html = HTML_TEMPLATES["image_preview_card"].format(url=img_url_with_ts, filename=filename)
+                filename = f"yuku_generated_{timestamp}.png"
                 yuku_response = {
                     "type": "html_template",
-                    "content": html,
-                    "image_url": img_url,
-                    "download_url": img_url_with_ts,
-                    "download_filename": filename
+                    "content": HTML_TEMPLATES["image_preview_card"].format(
+                        url=img_url, filename=filename, timestamp=timestamp
+                    ),
                 }
             elif tool.get("response_is_plain_text"):
-                yuku_response = {"type": "text", "content": api_response.text}
+                content = api_response.text.replace("\\n", "\n").strip()
+                yuku_response = {"type": "text", "content": content}
             else:
                 data = api_response.json()
-                # response_mapping.path is a key (flat). If nested path logic is needed later, adapt here.
-                mapping = tool.get("response_mapping", {}) or {}
-                path = mapping.get("path")
-                if path:
-                    content = data.get(path, None)
-                else:
-                    # fallback: entire json
-                    content = data
+                path = tool["response_mapping"]["path"]
+                content = data.get(path, "Error processing response.")
+                yuku_response = {"type": "text", "content": content}
 
-                if chosen_tool == "code_generation" and isinstance(content, str) and content.strip().startswith("{") and '"index.html"' in content:
-                    # return parsed project JSON if detected
-                    try:
-                        yuku_response = {"type": "code_project", "content": json.loads(content)}
-                    except Exception:
-                        yuku_response = {"type": "text", "content": content}
-                else:
-                    # ensure content is stringifiable
-                    yuku_response = {"type": "text", "content": content if isinstance(content, str) else json.dumps(content)}
-        except httpx.HTTPStatusError as he:
-            yuku_response = {"type": "error", "content": f"Upstream API HTTP error: {str(he)}"}
         except Exception as e:
-            yuku_response = {"type": "error", "content": str(e)}
+            yuku_response = {"type": "error", "content": f"⚠️ {str(e)}"}
 
     yuku_response["source"] = tool["name"]
     yuku_response["chips"] = chips
