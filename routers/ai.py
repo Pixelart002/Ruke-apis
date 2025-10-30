@@ -19,7 +19,7 @@ import requests
 from urllib.parse import quote_plus
 
 # llama_index (gpt_index) imports -- install via `pip install llama-index` if needed
-from llama_index import (
+from llama_index.core import (
     SimpleDirectoryReader,
     GPTVectorStoreIndex,
     LLMPredictor,
