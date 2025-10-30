@@ -13,10 +13,10 @@ pywebpush
 httpx
 python-multipart
 qrcode[pil]==7.4.2
-sentence-transformers
-scikit-learn
-numpy
 requests
+numpy
+faiss-cpu
+scikit-learn
 
 
 
