@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 import httpx
 from typing import Dict
 
-# --- YEH LINE MISSING THI ---
+# ✅ FIX: move this import ABOVE any usage of auth_utils
 from auth import utils as auth_utils
 
 router = APIRouter(
@@ -14,7 +14,7 @@ router = APIRouter(
 async def ask(question: str, current_user: Dict = Depends(auth_utils.get_current_user)):
     try:
         # Extract fullname instead of user_id
-        fullname = current_user["fullname"]
+        fullname = current_user.get("fullname", "UnknownUser")
 
         # Build Mistral URL using fullname
         mistral_url = f"https://mistral-ai-three.vercel.app/?id={fullname}&question={question}"
@@ -26,4 +26,4 @@ async def ask(question: str, current_user: Dict = Depends(auth_utils.get_current
         return {"fullname": fullname, "reply": res.text}
 
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
