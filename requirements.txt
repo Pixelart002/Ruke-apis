@@ -13,6 +13,7 @@ pywebpush
 httpx
 python-multipart
 qrcode[pil]==7.4.2
+llama-index==0.11.10
 
 
 
