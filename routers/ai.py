@@ -1,9 +1,14 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 import httpx
 from typing import Dict
 
+# --- YEH LINE MISSING THI ---
+from auth import utils as auth_utils
 
-router = APIRouter()
+router = APIRouter(
+    prefix="/ai",
+    tags=["AI Core"]
+)
 
 @router.get("/ask")
 async def ask(question: str, current_user: Dict = Depends(auth_utils.get_current_user)):
