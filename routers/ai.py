@@ -1,144 +1,177 @@
 # routers/ai.py
-import os
-import json
-import time
+# -----------------------------------------
+# Final version with working MistralCustomLLM for LlamaIndex
+# -----------------------------------------
+
+from fastapi import APIRouter, Depends, Request, HTTPException
+from typing import Dict
 import logging
-import requests
+import os
 from urllib.parse import quote_plus
-from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Dict, Optional
+import httpx
+import asyncio
 
-# Updated llama_index imports for 2024+
-from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, PromptTemplate, Settings
-from llama_index.core.llms import LLM
+from llama_index import (
+    SimpleDirectoryReader,
+    GPTVectorStoreIndex,
+    ServiceContext,
+    LLMPredictor,
+    PromptHelper,
+)
+from llama_index.llms.base import LLM
+from llama_index.llms.types import ChatResponse, CompletionResponse, LLMMetadata
 
-# Import your auth utilities (you already have this)
-from auth import utils as auth_utils
-from auth import schemas as auth_schemas
+from routers import auth_utils  # adjust import if auth_utils is in a different path
+from schemas import auth_schemas
 
 router = APIRouter()
+logger = logging.getLogger("routers.ai")
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# ----------------------------- #
-# 🔹 Custom LLM for Mistral API #
-# ----------------------------- #
-
+# -----------------------------------------
+# Custom LLM wrapper for Mistral endpoint
+# -----------------------------------------
 class MistralCustomLLM(LLM):
-    """
-    Custom LlamaIndex-compatible LLM wrapper for your Mistral endpoint:
-    https://mistral-ai-three.vercel.app/?id={fullname}&question={question}
-    """
+    """Custom LLM that calls your Mistral endpoint using fullname instead of user_id."""
 
-    def __init__(self, fullname: str, base_url: str = "https://mistral-ai-three.vercel.app", timeout: int = 30):
+    def __init__(self, fullname: str, base_url: str = "https://mistral-ai-three.vercel.app/"):
         self.fullname = fullname
         self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
 
-    def complete(self, prompt: str, **kwargs) -> str:
-        """Main synchronous call method for LlamaIndex."""
-        encoded_name = quote_plus(self.fullname)
-        encoded_question = quote_plus(prompt)
-        url = f"{self.base_url}/?id={encoded_name}&question={encoded_question}"
+    # ---------- Core sync methods ----------
+    def chat(self, messages, **kwargs) -> ChatResponse:
+        text = self._call(self._extract_prompt(messages))
+        return ChatResponse(message=text)
 
+    def stream_chat(self, messages, **kwargs):
+        text = self._call(self._extract_prompt(messages))
+        yield ChatResponse(message=text)
+
+    def stream_complete(self, prompt: str, **kwargs):
+        yield CompletionResponse(text=self._call(prompt))
+
+    def complete(self, prompt: str, **kwargs) -> CompletionResponse:
+        text = self._call(prompt)
+        return CompletionResponse(text=text)
+
+    # ---------- Async versions ----------
+    async def achat(self, messages, **kwargs) -> ChatResponse:
+        text = await self._acall(self._extract_prompt(messages))
+        return ChatResponse(message=text)
+
+    async def astream_chat(self, messages, **kwargs):
+        text = await self._acall(self._extract_prompt(messages))
+        yield ChatResponse(message=text)
+
+    async def astream_complete(self, prompt: str, **kwargs):
+        yield CompletionResponse(text=await self._acall(prompt))
+
+    # ---------- Internal HTTP calls ----------
+    def _call(self, prompt: str) -> str:
+        q = quote_plus(prompt)
+        id_ = quote_plus(self.fullname)
+        url = f"{self.base_url}/?id={id_}&question={q}"
         try:
-            logger.info(f"[MistralLLM] Sending request for {self.fullname}")
-            res = requests.get(url, timeout=self.timeout)
-            res.raise_for_status()
-
-            # Try parsing JSON
-            try:
-                data = res.json()
-                if isinstance(data, dict):
-                    for key in ("answer", "response", "text", "data"):
-                        if key in data:
-                            return data[key]
-                    return json.dumps(data)
-                elif isinstance(data, str):
-                    return data
-            except Exception:
-                return res.text
-
+            r = httpx.get(url, timeout=30)
+            if r.status_code == 200:
+                return r.text.strip()
+            return f"[HTTP {r.status_code}] {r.text}"
         except Exception as e:
-            logger.error(f"Error calling Mistral endpoint: {e}")
-            raise HTTPException(status_code=500, detail=f"AI endpoint error: {str(e)}")
+            return f"[Error contacting Mistral endpoint: {e}]"
 
-    # LlamaIndex expects this
-    async def acomplete(self, prompt: str, **kwargs):
-        return self.complete(prompt, **kwargs)
+    async def _acall(self, prompt: str) -> str:
+        q = quote_plus(prompt)
+        id_ = quote_plus(self.fullname)
+        url = f"{self.base_url}/?id={id_}&question={q}"
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                r = await client.get(url)
+                if r.status_code == 200:
+                    return r.text.strip()
+                return f"[HTTP {r.status_code}] {r.text}"
+        except Exception as e:
+            return f"[Error contacting Mistral endpoint: {e}]"
+
+    # ---------- Metadata ----------
+    @property
+    def metadata(self) -> LLMMetadata:
+        return LLMMetadata(
+            model_name="Mistral-Custom",
+            context_window=4096,
+            num_output=512,
+            is_chat_model=True,
+        )
+
+    # ---------- Utility ----------
+    def _extract_prompt(self, messages) -> str:
+        if isinstance(messages, str):
+            return messages
+        if isinstance(messages, list):
+            return "\n".join([f"{m.role}: {m.content}" for m in messages if hasattr(m, "content")])
+        return str(messages)
 
 
-# ----------------------------------- #
-# 🔹 Index Builder + Query Management #
-# ----------------------------------- #
+# -----------------------------------------
+# Helper: Create or load vector index
+# -----------------------------------------
+INDEX_PATH = "workspace_index.json"
+DOCS_PATH = "./docs"  # change if you store your text data elsewhere
 
-INDEX_PATH = "data/vector_index.json"
-DOCS_DIR = "data/docs"
 
-def get_index(fullname: str) -> VectorStoreIndex:
-    """Load or build the index for this user."""
+def get_index(fullname: str) -> GPTVectorStoreIndex:
+    """Load or create a LlamaIndex using the custom Mistral LLM."""
     llm = MistralCustomLLM(fullname=fullname)
-
-    Settings.llm = llm  # globally apply our custom model
-    Settings.chunk_size = 512
+    llm_predictor = LLMPredictor(llm=llm)
+    service_context = ServiceContext.from_defaults(llm_predictor=llm_predictor)
 
     if os.path.exists(INDEX_PATH):
-        logger.info("Loading existing index...")
-        return VectorStoreIndex.load_from_disk(INDEX_PATH)
+        logger.info("Loading index from disk...")
+        index = GPTVectorStoreIndex.load_from_disk(INDEX_PATH, service_context=service_context)
     else:
-        logger.info("No index found — creating from docs...")
-        os.makedirs(os.path.dirname(INDEX_PATH), exist_ok=True)
-        if not os.path.exists(DOCS_DIR):
-            raise HTTPException(status_code=404, detail="Docs directory not found")
-        documents = SimpleDirectoryReader(DOCS_DIR).load_data()
-        index = VectorStoreIndex.from_documents(documents)
-        index.storage_context.persist(persist_dir=os.path.dirname(INDEX_PATH))
-        return index
+        logger.info("Building new index from %s", DOCS_PATH)
+        documents = SimpleDirectoryReader(DOCS_PATH).load_data()
+        index = GPTVectorStoreIndex.from_documents(documents, service_context=service_context)
+        index.save_to_disk(INDEX_PATH)
+    return index
 
 
-# --------------------------- #
-# 🔹 FastAPI Router Endpoint  #
-# --------------------------- #
-
+# -----------------------------------------
+# Routes
+# -----------------------------------------
 @router.get("/ai/query")
-async def query_ai(
-    q: str = Query(..., description="Your question to the AI"),
-    current_user: Dict = Depends(auth_utils.get_current_user)
-):
+async def query_ai(q: str, current_user: Dict = Depends(auth_utils.get_current_user)):
     """
-    Query the AI index using your custom Mistral endpoint (fullname as user ID).
+    Query AI with a user's question.
+    Uses fullname as the unique identifier for your Mistral endpoint.
     """
-    fullname = current_user.get("fullname", "Unknown")
+    fullname = current_user["fullname"]
     logger.info(f"AI Query by: {fullname} | Q: {q}")
 
-    index = get_index(fullname)
-    query_engine = index.as_query_engine()
-    response = query_engine.query(q)
-
-    # Extract response text robustly
     try:
-        if hasattr(response, "response"):
-            text = response.response
-        elif hasattr(response, "get_formatted_response"):
-            text = response.get_formatted_response()
-        else:
-            text = str(response)
-    except Exception:
-        text = str(response)
+        index = get_index(fullname)
+        response = index.as_query_engine(similarity_top_k=5).query(q)
+        answer = str(response.response if hasattr(response, "response") else response)
+        return {"fullname": fullname, "question": q, "answer": answer}
+    except Exception as e:
+        logger.exception("AI query failed")
+        raise HTTPException(status_code=500, detail=f"AI query failed: {e}")
 
-    return {"fullname": fullname, "query": q, "answer": text}
-
-
-# ---------------------- #
-# 🔹 Example Test Route  #
-# ---------------------- #
 
 @router.get("/ai/test")
-async def test_ai(current_user: Dict = Depends(auth_utils.get_current_user)):
-    """Simple test route to check endpoint connection."""
-    fullname = current_user.get("fullname", "Unknown")
-    llm = MistralCustomLLM(fullname)
-    test_prompt = "Say hello and introduce yourself."
-    result = llm.complete(test_prompt)
-    return {"fullname": fullname, "response": result}
+async def ai_test(current_user: Dict = Depends(auth_utils.get_current_user)):
+    """Simple test endpoint to verify LLM connectivity."""
+    fullname = current_user["fullname"]
+    test_prompt = "Hello Anya, introduce yourself."
+    logger.info(f"Testing AI connection for: {fullname}")
+
+    llm = MistralCustomLLM(fullname=fullname)
+    response = llm._call(test_prompt)
+    return {"fullname": fullname, "test_prompt": test_prompt, "response": response}
+
+
+@router.get("/ai/ask")
+async def ai_ask(q: str, current_user: Dict = Depends(auth_utils.get_current_user)):
+    """Lightweight endpoint that directly hits the custom Mistral LLM."""
+    fullname = current_user["fullname"]
+    llm = MistralCustomLLM(fullname=fullname)
+    answer = llm._call(q)
+    return {"fullname": fullname, "question": q, "answer": answer}
