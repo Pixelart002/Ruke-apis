@@ -13,8 +13,8 @@ from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, PromptTemp
 from llama_index.core.llms import LLM
 
 # Import your auth utilities (you already have this)
-from routers import auth_utils
-from schemas import auth_schemas
+from auth import utils as auth_utils
+from auth import schemas as auth_schemas
 
 router = APIRouter()
 
