@@ -1,77 +1,58 @@
-# ai_server.py
-import json
-import urllib.parse
-from http.server import BaseHTTPRequestHandler, HTTPServer
-import requests
+# routes/ai_route.py
 
-# ========== CONFIG ==========
-HOST = "0.0.0.0"
-PORT = 8000
-MISTRAL_BASE = "https://mistral-ai-three.vercel.app/"
-TIMEOUT = 25
-# ============================
+import httpx
+from fastapi import APIRouter, HTTPException, Query
 
-def call_mistral(fullname: str, question: str) -> str:
-    """Call your Mistral endpoint and return response text."""
+# Create a new router instance. This will be included by main.py
+router = APIRouter()
+
+# Define the external API endpoint
+MISTRAL_API_URL = "https://mistral-ai-three.vercel.app/"
+
+
+@router.get("/ai")
+async def get_ai_response(
+    # Use Query() to define the query parameters for your /ai endpoint
+    # We rename 'question' to 'question_param' when sending to the external API
+    user_id: str = Query(..., description="The ID of the user"),
+    question: str = Query(..., description="The question to ask the AI")
+):
+    """
+    This endpoint takes a user_id and a question, forwards them to the
+    Mistral AI API, and returns the response.
+    """
+    
+    # Prepare the parameters for the external API call
+    # Note: We map our 'question' variable to the 'question_param' key
+    #       as required by the external service.
+    external_params = {
+        "id": user_id,
+        "question_param": question
+    }
+
+    # Use httpx.AsyncClient for asynchronous requests
     try:
-        encoded_name = urllib.parse.quote_plus(fullname)
-        encoded_q = urllib.parse.quote_plus(question)
-        url = f"{MISTRAL_BASE}?id={encoded_name}&question={encoded_q}"
+        async with httpx.AsyncClient() as client:
+            # Make the GET request to the external API
+            print(f"Forwarding request to: {MISTRAL_API_URL} with params: {external_params}")
+            
+            res = await client.get(MISTRAL_API_URL, params=external_params)
 
-        res = requests.get(url, timeout=TIMEOUT)
-        res.raise_for_status()
+            # Raise an exception if the API returns an error (4xx or 5xx)
+            res.raise_for_status()
 
-        if "application/json" in res.headers.get("Content-Type", ""):
-            data = res.json()
-            # try common response fields
-            if isinstance(data, dict):
-                for key in ("answer", "response", "text", "result"):
-                    if key in data:
-                        return str(data[key])
-            return json.dumps(data)
-        return res.text
+            # Return the JSON response from the external API directly
+            return res.json()
 
+    except httpx.HTTPStatusError as exc:
+        # Handle errors from the external API (e.g., 404, 500)
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail=f"Error from external AI API: {exc.response.text}"
+        )
     except Exception as e:
-        return f"Error calling Mistral: {e}"
-
-class SimpleAIHandler(BaseHTTPRequestHandler):
-    """Minimal handler with one endpoint /ai"""
-
-    def _set_headers(self, code=200):
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-
-    def do_GET(self):
-        """Handle GET /ai?fullname=...&question=..."""
-        parsed = urllib.parse.urlparse(self.path)
-        if parsed.path != "/ai":
-            self._set_headers(404)
-            self.wfile.write(json.dumps({"error": "Not Found"}).encode("utf-8"))
-            return
-
-        params = urllib.parse.parse_qs(parsed.query)
-        fullname = params.get("fullname", [""])[0]
-        question = params.get("question", [""])[0]
-
-        if not fullname or not question:
-            self._set_headers(400)
-            self.wfile.write(json.dumps({"error": "Missing fullname or question"}).encode("utf-8"))
-            return
-
-        answer = call_mistral(fullname, question)
-        resp = {"fullname": fullname, "question": question, "answer": answer}
-
-        self._set_headers(200)
-        self.wfile.write(json.dumps(resp, ensure_ascii=False, indent=2).encode("utf-8"))
-
-def run_server():
-    """Run the HTTP server"""
-    server_address = (HOST, PORT)
-    httpd = HTTPServer(server_address, SimpleAIHandler)
-    print(f"✅ Simple AI endpoint running at http://{HOST}:{PORT}/ai?fullname=John+Doe&question=Hello")
-    httpd.serve_forever()
-
-if __name__ == "__main__":
-    run_server()
+        # Handle other unexpected errors (e.g., network issues)
+        raise HTTPException(
+            status_code=500,
+            detail=f"An internal server error occurred: {str(e)}"
+        )
