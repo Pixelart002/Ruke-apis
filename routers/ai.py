@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 import httpx
 from typing import Dict
-from your_module import auth_utils  # adjust to your actual path
+
 
 router = APIRouter()
 
