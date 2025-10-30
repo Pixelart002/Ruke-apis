@@ -4,7 +4,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from auth.router import router as auth_router
 from routers.users import router as users_router
-from routers.ai import router as ai_router
 from routers.notifications import router as notifications_router
 from routers.feedback import router as feedback_router
 
@@ -32,7 +31,6 @@ app.add_middleware(
 # --- Include Routers ---
 app.include_router(auth_router)
 app.include_router(users_router)
-app.include_router(ai_router)
 app.include_router(notifications_router)
 app.include_router(feedback_router)
 
