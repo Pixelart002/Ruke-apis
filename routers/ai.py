@@ -1,8 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
-import httpx
+import httpx, json
 from typing import Dict
-
-# ✅ FIX: move this import ABOVE any usage of auth_utils
 from auth import utils as auth_utils
 
 router = APIRouter(
@@ -23,7 +21,16 @@ async def ask(question: str, current_user: Dict = Depends(auth_utils.get_current
         async with httpx.AsyncClient() as client:
             res = await client.get(mistral_url, timeout=60)
 
-        return {"fullname": fullname, "reply": res.text}
+        # Try to parse only the "answer" part from nested JSON
+        try:
+            data = json.loads(res.text)
+            # The "reply" key from your structure contains another JSON string
+            inner = json.loads(data.get("reply", "{}"))
+            answer = inner.get("answer", "").strip()
+        except Exception:
+            answer = res.text  # fallback if JSON structure fails
+
+        return {"fullname": fullname, "reply": answer}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
