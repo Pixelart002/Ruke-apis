@@ -6,6 +6,7 @@ from auth.router import router as auth_router
 from routers.users import router as users_router
 from routers.notifications import router as notifications_router
 from routers.feedback import router as feedback_router
+from routers.ai import app
 
 
 app = FastAPI(
