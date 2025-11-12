@@ -1,38 +1,53 @@
-import os, time, json, urllib.parse, httpx
+# routers/ai.py
+import os
+import time
+import json
+import urllib.parse
 from pathlib import Path
-import google.generativeai as genai
-from fastapi import FastAPI, Depends, HTTPException, status
-from pydantic import BaseModel
-from auth import utils as auth_utils
 from typing import Dict
 
-# === CORE SETUP ===
-app = FastAPI(title="Anya AI Core", version="5.0")
+import httpx
+import google.generativeai as genai
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 
+from auth import utils as auth_utils  # your dependency
+
+# === ROUTER ===
+router = APIRouter(
+    prefix="/ai",
+    tags=["AI Core"]
+)
+
+# === CONFIG PATHS ===
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = BASE_DIR / "config"
-CONFIG_DIR.mkdir(exist_ok=True)
 
-# === UTILITIES ===
-def load_text(path, fallback=""):
+def load_text(path: Path, fallback: str = "") -> str:
     try:
         with open(path, "r", encoding="utf-8") as f:
             return f.read().strip()
-    except:
+    except Exception:
         return fallback
 
-def load_json(path, fallback=None):
+def load_json(path: Path, fallback=None) -> dict:
     try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
-    except:
+    except Exception:
         return fallback or {}
 
-# === CONFIG ===
+# Ensure config dir exists (no-op if present)
+try:
+    CONFIG_DIR.mkdir(exist_ok=True)
+except Exception:
+    pass
+
 SYSTEM_PROMPT = load_text(
     CONFIG_DIR / "system_prompt.txt",
-    "You are Anya — a brilliant, emotionally intelligent AI system. Respond professionally and adaptively."
+    "You are Anya — a professional, emotionally intelligent AI assistant."
 )
+
 MODELS = load_json(
     CONFIG_DIR / "models.json",
     {
@@ -50,11 +65,11 @@ if GEMINI_API_KEY:
 # === REQUEST MODEL ===
 class AIPrompt(BaseModel):
     prompt: str
-    mode: str = "gemini"  # "gemini", "mistral", or "image"
+    mode: str = "gemini"   # "gemini", "mistral", or "image"
 
-# === MAIN ENDPOINT ===
-@app.post("/ai/ask")
-async def anya_ai_core(
+# === ROUTES ===
+@router.post("/ask")
+async def ask_gemini(
     request: AIPrompt,
     current_user: Dict = Depends(auth_utils.get_current_user)
 ):
@@ -64,15 +79,22 @@ async def anya_ai_core(
             detail="Directive cannot be empty."
         )
 
-    try:
-        user_id = str(current_user.get("id", "guest"))
-        mode = request.mode.lower().strip()
-        user_prompt = request.prompt.strip()
-        full_prompt = f"{SYSTEM_PROMPT}\n\nUser: {user_prompt}"
+    user_id = str(current_user.get("id", "guest"))
+    mode = (request.mode or "gemini").lower().strip()
+    user_prompt = request.prompt.strip()
+    full_prompt = f"{SYSTEM_PROMPT}\n\nUser: {user_prompt}"
 
-        # === GEMINI ===
+    try:
+        # -------------------------
+        # GEMINI (text)
+        # -------------------------
         if mode == "gemini":
-            model = genai.GenerativeModel(MODELS["gemini_model"])
+            if not GEMINI_API_KEY:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Gemini API key not configured."
+                )
+            model = genai.GenerativeModel(MODELS.get("gemini_model", "gemini-2.5-flash-lite"))
             response = model.generate_content(full_prompt)
             return {
                 "engine": "Gemini",
@@ -80,13 +102,12 @@ async def anya_ai_core(
                 "response": response.text.strip()
             }
 
-        # === MISTRAL ===
+        # -------------------------
+        # MISTRAL (text)
+        # -------------------------
         elif mode == "mistral":
-            q = (
-                full_prompt.replace(" ", "+")
-                .replace("?", "%3F")
-                .replace("&", "%26")
-            )
+            # URL-encode the full prompt for the query param
+            q = urllib.parse.quote_plus(full_prompt)
             mistral_url = MODELS["mistral_url"].format(id=user_id, q=q)
             async with httpx.AsyncClient(timeout=30) as client:
                 res = await client.get(mistral_url)
@@ -101,12 +122,15 @@ async def anya_ai_core(
                 detail="Mistral API failed to respond."
             )
 
-        # === FLUX (AUTO-PROFESSIONALIZED IMAGE GEN) ===
+        # -------------------------
+        # FLUX SCHNELL (image) with auto-professionalization via Mistral
+        # -------------------------
         elif mode == "image":
-            # Step 1: Ask Mistral to professionalize the user prompt
-            enhance_q = f"Make this image prompt professional and detailed: {user_prompt}"
-            q = enhance_q.replace(" ", "+").replace("?", "%3F").replace("&", "%26")
-            mistral_url = MODELS["mistral_url"].format(id=user_id, q=q)
+            # 1) Ask Mistral to professionalize the user prompt
+            enhance_instruction = f"Professionalize and expand this image generation prompt for a photo/illustration: {user_prompt}"
+            enhance_q = urllib.parse.quote_plus(f"{SYSTEM_PROMPT}\n\nInstruction: {enhance_instruction}")
+            mistral_url = MODELS["mistral_url"].format(id=user_id, q=enhance_q)
+
             async with httpx.AsyncClient(timeout=30) as client:
                 enhance_res = await client.get(mistral_url)
             if enhance_res.status_code != 200:
@@ -116,12 +140,12 @@ async def anya_ai_core(
                 )
             enhanced_prompt = enhance_res.text.strip()
 
-            # Step 2: Generate image via Flux Schnell
+            # 2) Call Flux Schnell with the enhanced prompt
             encoded_prompt = urllib.parse.quote(enhanced_prompt)
             timestamp = str(int(time.time()))
             img_url = MODELS["flux_url"].format(p=encoded_prompt, t=timestamp)
 
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=60) as client:
                 img_res = await client.get(img_url)
             if img_res.status_code == 200:
                 return {
@@ -137,15 +161,21 @@ async def anya_ai_core(
                 detail="Flux Schnell image generation failed."
             )
 
-        # === INVALID MODE ===
+        # -------------------------
+        # INVALID MODE
+        # -------------------------
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid mode. Choose 'gemini', 'mistral', or 'image'."
             )
 
+    except HTTPException:
+        # Re-raise HTTPExceptions so FastAPI handles them as-is
+        raise
     except Exception as e:
-        print(f"Anya AI Core Error: {e}")
+        # Log server-side error and return generic service unavailable message
+        print(f"[AI Router] Internal Error: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AI Core encountered an internal error."
