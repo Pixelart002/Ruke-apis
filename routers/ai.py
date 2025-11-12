@@ -1,182 +1,152 @@
-from fastapi import APIRouter, Depends, HTTPException, Body, Query
-from fastapi.responses import JSONResponse
-import httpx, json, time, urllib.parse, re
-from typing import Dict, Any
+import os, time, json, urllib.parse, httpx
+from pathlib import Path
+import google.generativeai as genai
+from fastapi import FastAPI, Depends, HTTPException, status
+from pydantic import BaseModel
 from auth import utils as auth_utils
+from typing import Dict
 
-router = APIRouter(
-    prefix="/ai",
-    tags=["AI Core"]
+# === CORE SETUP ===
+app = FastAPI(title="Anya AI Core", version="5.0")
+
+BASE_DIR = Path(__file__).resolve().parent
+CONFIG_DIR = BASE_DIR / "config"
+CONFIG_DIR.mkdir(exist_ok=True)
+
+# === UTILITIES ===
+def load_text(path, fallback=""):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except:
+        return fallback
+
+def load_json(path, fallback=None):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return fallback or {}
+
+# === CONFIG ===
+SYSTEM_PROMPT = load_text(
+    CONFIG_DIR / "system_prompt.txt",
+    "You are Anya — a brilliant, emotionally intelligent AI system. Respond professionally and adaptively."
+)
+MODELS = load_json(
+    CONFIG_DIR / "models.json",
+    {
+        "gemini_model": "gemini-2.5-flash-lite",
+        "mistral_url": "https://mistral-ai-three.vercel.app/?id={id}&question={q}",
+        "flux_url": "https://flux-schnell.hello-kaiiddo.workers.dev/img?prompt={p}&t={t}"
+    }
 )
 
-# ============================================================
-# Utility Helpers
-# ============================================================
+# === GEMINI CONFIG ===
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
-def clean_surrogates(text: str) -> str:
-    """
-    Removes invalid surrogate pairs and returns clean UTF-8 text.
-    Ensures emojis and special characters render properly.
-    """
-    if not isinstance(text, str):
-        text = str(text)
-    return text.encode("utf-8", "surrogatepass").decode("utf-8", "ignore")
+# === REQUEST MODEL ===
+class AIPrompt(BaseModel):
+    prompt: str
+    mode: str = "gemini"  # "gemini", "mistral", or "image"
 
-
-def detect_image_intent(text: str) -> bool:
-    """
-    Detects whether the user's message implies an image generation request.
-    Triggers if text contains words like 'draw', 'generate image', 'show me', etc.
-    """
-    if not text:
-        return False
-    keywords = [
-        r"\bdraw\b", r"\bimage\b", r"\bpicture\b", r"\bphoto\b",
-        r"\bgenerate\b", r"\bcreate\b", r"\bshow me\b"
-    ]
-    return any(re.search(k, text.lower()) for k in keywords)
-
-
-async def call_mistral(fullname: str, question: str) -> str:
-    """Handles async call to the Mistral text endpoint."""
-    encoded_q = urllib.parse.quote(question)
-    mistral_url = f"https://mistral-ai-three.vercel.app/?id={fullname}&question={encoded_q}"
-
-    async with httpx.AsyncClient() as client:
-        res = await client.get(mistral_url, timeout=60)
-
-    if res.status_code != 200:
-        raise HTTPException(status_code=res.status_code, detail="Upstream error from Mistral API")
-
-    try:
-        data = res.json()
-    except Exception:
-        data = json.loads(res.text)
-
-    answer_raw = data.get("answer", "")
-    return clean_surrogates(answer_raw)
-
-
-async def call_flux(prompt: str) -> str:
-    """Handles async call to Flux Schnell image endpoint."""
-    encoded_prompt = urllib.parse.quote(prompt)
-    timestamp = int(time.time())
-    img_url = f"https://flux-schnell.hello-kaiiddo.workers.dev/img?prompt={encoded_prompt}&t={timestamp}"
-
-    # Optional verification of response
-    async with httpx.AsyncClient() as client:
-        res = await client.get(img_url, timeout=60)
-
-    if res.status_code != 200:
-        raise HTTPException(status_code=res.status_code, detail="Flux Schnell image generation failed.")
-
-    return img_url
-
-
-# ============================================================
-# Individual Endpoints
-# ============================================================
-
-@router.get("/ask")
-async def ask_get(
-    question: str = Query(..., description="User question"),
+# === MAIN ENDPOINT ===
+@app.post("/ai/ask")
+async def anya_ai_core(
+    request: AIPrompt,
     current_user: Dict = Depends(auth_utils.get_current_user)
 ):
-    """Text-based AI reply using Mistral API (GET version)."""
-    try:
-        fullname = current_user.get("fullname", "UnknownUser")
-        answer = await call_mistral(fullname, question)
-        return JSONResponse(content={"fullname": fullname, "reply": answer}, ensure_ascii=False)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/ask")
-async def ask_post(
-    payload: Dict = Body(..., example={"question": "Hello, how are you?"}),
-    current_user: Dict = Depends(auth_utils.get_current_user)
-):
-    """Text-based AI reply using Mistral API (POST version)."""
-    try:
-        question = payload.get("question")
-        if not question:
-            raise HTTPException(status_code=400, detail="Missing 'question' field.")
-
-        fullname = current_user.get("fullname", "UnknownUser")
-        answer = await call_mistral(fullname, question)
-        return JSONResponse(content={"fullname": fullname, "reply": answer}, ensure_ascii=False)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/image")
-async def generate_image(
-    payload: Dict = Body(..., example={"prompt": "A futuristic cityscape at sunset"}),
-    current_user: Dict = Depends(auth_utils.get_current_user)
-):
-    """Image generation using Flux Schnell API."""
-    try:
-        prompt = payload.get("prompt")
-        if not prompt:
-            raise HTTPException(status_code=400, detail="Missing 'prompt' field.")
-
-        img_url = await call_flux(prompt)
-        return JSONResponse(
-            content={
-                "fullname": current_user.get("fullname", "UnknownUser"),
-                "prompt": prompt,
-                "image_url": img_url
-            },
-            ensure_ascii=False
+    if not request.prompt or not request.prompt.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Directive cannot be empty."
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
-
-# ============================================================
-# Smart Unified Endpoint
-# ============================================================
-
-@router.post("/process")
-async def ai_process(
-    payload: Dict = Body(..., example={"input": "Draw a dragon flying over mountains"}),
-    current_user: Dict = Depends(auth_utils.get_current_user)
-):
-    """
-    POST /ai/process
-    Automatically decides between text reply or image generation.
-    Body: {"input": "Generate an image of a sunset cityscape"} or {"input": "Explain quantum mechanics"}
-    """
     try:
-        user_input = payload.get("input")
-        if not user_input:
-            raise HTTPException(status_code=400, detail="Missing 'input' field.")
+        user_id = str(current_user.get("id", "guest"))
+        mode = request.mode.lower().strip()
+        user_prompt = request.prompt.strip()
+        full_prompt = f"{SYSTEM_PROMPT}\n\nUser: {user_prompt}"
 
-        fullname = current_user.get("fullname", "UnknownUser")
+        # === GEMINI ===
+        if mode == "gemini":
+            model = genai.GenerativeModel(MODELS["gemini_model"])
+            response = model.generate_content(full_prompt)
+            return {
+                "engine": "Gemini",
+                "type": "text",
+                "response": response.text.strip()
+            }
 
-        if detect_image_intent(user_input):
-            img_url = await call_flux(user_input)
-            return JSONResponse(
-                content={
-                    "fullname": fullname,
-                    "mode": "image",
-                    "prompt": user_input,
-                    "image_url": img_url
-                },
-                ensure_ascii=False
+        # === MISTRAL ===
+        elif mode == "mistral":
+            q = (
+                full_prompt.replace(" ", "+")
+                .replace("?", "%3F")
+                .replace("&", "%26")
+            )
+            mistral_url = MODELS["mistral_url"].format(id=user_id, q=q)
+            async with httpx.AsyncClient(timeout=30) as client:
+                res = await client.get(mistral_url)
+            if res.status_code == 200:
+                return {
+                    "engine": "Mistral",
+                    "type": "text",
+                    "response": res.text.strip()
+                }
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Mistral API failed to respond."
             )
 
-        # Otherwise, process as chat
-        answer = await call_mistral(fullname, user_input)
-        return JSONResponse(
-            content={
-                "fullname": fullname,
-                "mode": "chat",
-                "question": user_input,
-                "reply": answer
-            },
-            ensure_ascii=False
-        )
+        # === FLUX (AUTO-PROFESSIONALIZED IMAGE GEN) ===
+        elif mode == "image":
+            # Step 1: Ask Mistral to professionalize the user prompt
+            enhance_q = f"Make this image prompt professional and detailed: {user_prompt}"
+            q = enhance_q.replace(" ", "+").replace("?", "%3F").replace("&", "%26")
+            mistral_url = MODELS["mistral_url"].format(id=user_id, q=q)
+            async with httpx.AsyncClient(timeout=30) as client:
+                enhance_res = await client.get(mistral_url)
+            if enhance_res.status_code != 200:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Failed to enhance image prompt via Mistral."
+                )
+            enhanced_prompt = enhance_res.text.strip()
+
+            # Step 2: Generate image via Flux Schnell
+            encoded_prompt = urllib.parse.quote(enhanced_prompt)
+            timestamp = str(int(time.time()))
+            img_url = MODELS["flux_url"].format(p=encoded_prompt, t=timestamp)
+
+            async with httpx.AsyncClient(timeout=30) as client:
+                img_res = await client.get(img_url)
+            if img_res.status_code == 200:
+                return {
+                    "engine": "Flux Schnell",
+                    "type": "image",
+                    "image_url": img_url,
+                    "original_prompt": user_prompt,
+                    "enhanced_prompt": enhanced_prompt
+                }
+
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Flux Schnell image generation failed."
+            )
+
+        # === INVALID MODE ===
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid mode. Choose 'gemini', 'mistral', or 'image'."
+            )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Anya AI Core Error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI Core encountered an internal error."
+        )
