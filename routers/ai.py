@@ -65,7 +65,7 @@ MODELS = load_json(
 )
 
 # === GEMINI CONFIG ===
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = os.getenv("AIzaSyDATuXl_5gMVK4ULJiH3hvZ4PGHsDQhD0c")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 else:
