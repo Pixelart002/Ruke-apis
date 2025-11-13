@@ -43,7 +43,7 @@ except Exception as e:
     logger.error(f"Chat history collection ('chat_history') nahi mil saki: {e}")
     chat_collection = None
 
-# ... (load_text aur load_json functions yahan... same as before) ...
+# ... (load_text aur load_json functions same hain) ...
 def load_text(path: Path, fallback: str = "") -> str:
     """Safely load a text file."""
     try:
@@ -62,7 +62,7 @@ def load_json(path: Path, fallback=None) -> dict:
         logger.warning(f"Failed to load JSON file {path}: {e}")
         return fallback or {}
 
-# Yeh raha woh code jo directory banata hai
+# Directory creation logic (aapka code pehle se sahi hai)
 try:
     CONFIG_DIR.mkdir(exist_ok=True)
 except Exception as e:
@@ -76,18 +76,17 @@ SYSTEM_PROMPT = load_text(
 MODELS = load_json(
     CONFIG_DIR / "models.json",
     {
-        "gemini_model": "gemini-1.5-flash",
+        # [FIX] Model ka naam "gemini-1.5-flash-latest" kar diya gaya hai
+        "gemini_model": "gemini-1.5-flash-latest",
         "mistral_url": "https://mistral-ai-three.vercel.app/?id={id}&question={q}",
         "flux_url": "https://flux-schnell.hello-kaiiddo.workers.dev/img?prompt={p}&t={t}",
-        # [NEW] Aapka naya Vasarai/Midjourney API
         "midjourney_url": "https://midapi.vasarai.net/api/v1/images/generate-image?message={p}",
-        "midjourney_token": "Bearer vasarai" # Token ko yahan rakhein (behtar hoga ise bhi env se load karein)
+        "midjourney_token": "Bearer vasarai"
     }
 )
 
 # === GEMINI CONFIG ===
-# [SECURITY] API Key ko hardcode NAHI kiya gaya hai.
-# Kripya apni API Key ko "GEMINI_API_KEY" naam ke Environment Variable mein set karein.
+# [SECURITY] API Key ko Environment Variable se hi load karna sahi hai
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -99,7 +98,7 @@ class AIEngine(str, Enum):
     GEMINI = "gemini"
     MISTRAL = "mistral"
     IMAGE = "image" # Yeh Flux hai
-    MIDJOURNEY = "midjourney" # [NEW] Yeh Vasarai hai
+    MIDJOURNEY = "midjourney" # Yeh Vasarai hai
 
 class AIPrompt(BaseModel):
     prompt: str
@@ -141,7 +140,11 @@ async def ask_ai(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail="Gemini API key not configured."
                 )
-            model = genai.GenerativeModel(MODELS.get("gemini_model", "gemini-1.5-flash"))
+            
+            # [FIX] Model name config se lein (gemini-1.5-flash-latest)
+            model_name = MODELS.get("gemini_model", "gemini-1.5-flash-latest")
+            model = genai.GenerativeModel(model_name)
+            
             response = await model.generate_content_async(full_prompt)
             
             response_data = {
@@ -167,6 +170,7 @@ async def ask_ai(
                 except httpx.RequestError as req_err:
                     raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Mistral API connection failed.")
 
+                # Clean JSON logic (Aapka code pehle se sahi hai)
                 try:
                     data = json.loads(res.text)
                     cleaned_response = data.get("answer", "").strip() or res.text.strip()
@@ -183,7 +187,6 @@ async def ask_ai(
         # FLUX SCHNELL (Image)
         # -------------------------
         elif mode == AIEngine.IMAGE:
-            # (Aapka "enhance prompt" logic pehle se hi Mistral use kar raha hai)
             enhance_instruction = (
                 f"Professionalize and expand this image generation prompt for a high-quality, realistic render: {user_prompt}"
             )
@@ -200,17 +203,15 @@ async def ask_ai(
                 try:
                     enhance_res = await client.get(mistral_url, timeout=30.0)
                     enhance_res.raise_for_status()
-                except Exception as e:
-                    logger.warning(f"Flux enhance (Mistral) failed: {e}. Using original prompt.")
-                    enhanced_prompt = user_prompt # Fallback: Original prompt use karein
-                
-                if not enhanced_prompt:
                     try:
                         data = json.loads(enhance_res.text)
                         enhanced_prompt = data.get("answer", "").strip() or enhance_res.text.strip()
                     except json.JSONDecodeError:
                         enhanced_prompt = enhance_res.text.strip()
-
+                except Exception as e:
+                    logger.warning(f"Flux enhance (Mistral) failed: {e}. Using original prompt.")
+                    enhanced_prompt = user_prompt # Fallback
+                
                 # --- Flux Schnell Call ---
                 encoded_prompt = urllib.parse.quote(enhanced_prompt)
                 timestamp = str(int(time.time()))
@@ -233,18 +234,46 @@ async def ask_ai(
                 }
         
         # -------------------------
-        # [NEW] VASARAI (Midjourney)
+        # VASARAI (Midjourney)
         # -------------------------
         elif mode == AIEngine.MIDJOURNEY:
-            encoded_prompt = urllib.parse.quote(user_prompt)
-            mj_url = MODELS["midjourney_url"].format(p=encoded_prompt)
-            mj_token = MODELS.get("midjourney_token", "Bearer vasarai") # Token config se lein
+            # [NEW] Midjourney ke liye prompt enhancement
+            enhance_instruction = (
+                f"Professionalize and expand this image generation prompt for a high-quality, artistic render (Midjourney style): {user_prompt}"
+            )
+            enhance_q = urllib.parse.quote(
+                f"{SYSTEM_PROMPT}\n\n{user_fullname}: {enhance_instruction}"
+            )
+            u_id = urllib.parse.quote(str(user_id))
+            mistral_url = MODELS["mistral_url"].format(id=u_id, q=enhance_q)
 
-            async with httpx.AsyncClient(timeout=60) as client:
+            enhanced_prompt = ""
+            
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                # --- Mistral Call (for enhancing) ---
+                try:
+                    enhance_res = await client.get(mistral_url, timeout=30.0)
+                    enhance_res.raise_for_status()
+                    try:
+                        data = json.loads(enhance_res.text)
+                        enhanced_prompt = data.get("answer", "").strip() or enhance_res.text.strip()
+                    except json.JSONDecodeError:
+                        enhanced_prompt = enhance_res.text.strip()
+                except Exception as e:
+                    logger.warning(f"Midjourney enhance (Mistral) failed: {e}. Using original prompt.")
+                    enhanced_prompt = user_prompt # Fallback
+
+                # --- Vasarai (Midjourney) Call ---
+                # [NEW] Enhanced prompt ka istemaal
+                encoded_prompt = urllib.parse.quote(enhanced_prompt)
+                mj_url = MODELS["midjourney_url"].format(p=encoded_prompt)
+                mj_token = MODELS.get("midjourney_token", "Bearer vasarai")
+
                 try:
                     res = await client.post(
                         mj_url,
-                        headers={"Authorization": mj_token}
+                        headers={"Authorization": mj_token},
+                        timeout=60.0 # Timeout yahan add karein
                     )
                     res.raise_for_status()
                     data = res.json()
@@ -258,7 +287,7 @@ async def ask_ai(
                         "type": "image",
                         "image_url": cdn_url,
                         "original_prompt": user_prompt,
-                        "enhanced_prompt": user_prompt # Is API mein enhancement nahi hai
+                        "enhanced_prompt": enhanced_prompt # Ab enhanced prompt return hoga
                     }
                 except httpx.HTTPStatusError as http_err:
                     logger.error(f"Midjourney API request failed: {http_err}")
@@ -279,7 +308,7 @@ async def ask_ai(
                 detail="Invalid mode. Choose 'gemini', 'mistral', 'image', or 'midjourney'."
             )
 
-        # [Database Save Logic]
+        # [Database Save Logic] (Aapka code pehle se sahi hai)
         if chat_collection is not None:
             try:
                 chat_log = {
