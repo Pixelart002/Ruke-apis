@@ -1,4 +1,3 @@
-# routers/ai.py
 import os
 import time
 import json
@@ -22,18 +21,9 @@ router = APIRouter(
 )
 
 # === LOGGER ===
-# Use a proper logger instead of print() for errors
 logger = logging.getLogger(__name__)
 
 # === CONFIG PATHS ===
-# [FIX] Changed BASE_DIR to parent.parent
-# This assumes your directory structure is:
-# project_root/
-#  ├── routers/
-#  │   └── ai.py
-#  └── config/
-#      ├── system_prompt.txt
-#      └── models.json
 BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_DIR = BASE_DIR / "config"
 
@@ -55,7 +45,6 @@ def load_json(path: Path, fallback=None) -> dict:
         logger.warning(f"Failed to load JSON file {path}: {e}")
         return fallback or {}
 
-# Ensure config dir exists (no-op if present)
 try:
     CONFIG_DIR.mkdir(exist_ok=True)
 except Exception as e:
@@ -69,7 +58,7 @@ SYSTEM_PROMPT = load_text(
 MODELS = load_json(
     CONFIG_DIR / "models.json",
     {
-        "gemini_model": "gemini-1.5-flash", # Updated to a common modern model
+        "gemini_model": "gemini-1.5-flash",
         "mistral_url": "https://mistral-ai-three.vercel.app/?id={id}&question={q}",
         "flux_url": "https://flux-schnell.hello-kaiiddo.workers.dev/img?prompt={p}&t={t}"
     }
@@ -83,7 +72,6 @@ else:
     logger.warning("GEMINI_API_KEY environment variable not set.")
 
 # === REQUEST MODELS ===
-# [ENHANCE] Use Enum for mode for validation and clarity
 class AIEngine(str, Enum):
     GEMINI = "gemini"
     MISTRAL = "mistral"
@@ -91,16 +79,17 @@ class AIEngine(str, Enum):
 
 class AIPrompt(BaseModel):
     prompt: str
-    mode: AIEngine = AIEngine.GEMINI  # "gemini", "mistral", or "image"
+    mode: AIEngine = AIEngine.GEMINI
 
-# === ROUTES ===
+
+# === MAIN ROUTE ===
 @router.post("/ask")
 async def ask_ai(
     request: AIPrompt,
     current_user: Dict = Depends(auth_utils.get_current_user)
 ):
     """
-    Master AI endpoint to route requests to Gemini, Mistral, or Flux (Image Gen).
+    Master AI endpoint to route requests to Gemini, Mistral, or Flux Schnell (Image Gen).
     """
     if not request.prompt or not request.prompt.strip():
         raise HTTPException(
@@ -115,7 +104,7 @@ async def ask_ai(
 
     try:
         # -------------------------
-        # GEMINI (text)
+        # GEMINI (Text)
         # -------------------------
         if mode == AIEngine.GEMINI:
             if not GEMINI_API_KEY:
@@ -124,7 +113,7 @@ async def ask_ai(
                     detail="Gemini API key not configured."
                 )
             model = genai.GenerativeModel(MODELS.get("gemini_model", "gemini-1.5-flash"))
-            response = await model.generate_content_async(full_prompt) # Use async
+            response = await model.generate_content_async(full_prompt)
             return {
                 "engine": "Gemini",
                 "type": "text",
@@ -132,18 +121,17 @@ async def ask_ai(
             }
 
         # -------------------------
-        # MISTRAL (text)
+        # MISTRAL (Text)
         # -------------------------
         elif mode == AIEngine.MISTRAL:
-            # [FIX] Use urllib.parse.quote for URL query parameters, not quote_plus
             q = urllib.parse.quote(full_prompt)
             u_id = urllib.parse.quote(user_id)
             mistral_url = MODELS["mistral_url"].format(id=u_id, q=q)
-            
+
             async with httpx.AsyncClient(timeout=30) as client:
                 try:
                     res = await client.get(mistral_url)
-                    res.raise_for_status()  # Check for 4xx/5xx errors
+                    res.raise_for_status()
                 except httpx.HTTPStatusError as http_err:
                     logger.warning(f"Mistral API request failed: {http_err}")
                     raise HTTPException(
@@ -156,7 +144,7 @@ async def ask_ai(
                         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                         detail="Mistral API connection failed."
                     )
-                
+
                 return {
                     "engine": "Mistral",
                     "type": "text",
@@ -164,18 +152,20 @@ async def ask_ai(
                 }
 
         # -------------------------
-        # FLUX SCHNELL (image)
+        # FLUX SCHNELL (Image)
         # -------------------------
         elif mode == AIEngine.IMAGE:
-            # 1) Ask Mistral to professionalize the user prompt
-            enhance_instruction = f"Professionalize and expand this image generation prompt for a photo/illustration: {user_prompt}"
-            enhance_q = urllib.parse.quote(f"{SYSTEM_PROMPT}\n\nInstruction: {enhance_instruction}")
+            enhance_instruction = (
+                f"Professionalize and expand this image generation prompt for a high-quality, realistic render: {user_prompt}"
+            )
+            enhance_q = urllib.parse.quote(
+                f"{SYSTEM_PROMPT}\n\nInstruction: {enhance_instruction}"
+            )
             u_id = urllib.parse.quote(user_id)
             mistral_url = MODELS["mistral_url"].format(id=u_id, q=enhance_q)
 
             enhanced_prompt = ""
-            
-            # [ENHANCE] Use a single client for both requests
+
             async with httpx.AsyncClient(timeout=90.0) as client:
                 # --- Mistral Call ---
                 try:
@@ -193,15 +183,19 @@ async def ask_ai(
                         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                         detail="Image prompt enhancement service connection failed."
                     )
-                
-                enhanced_prompt = enhance_res.text.strip()
 
-                # 2) Call Flux Schnell with the enhanced prompt
+                # ✅ Clean JSON/Text result — only extract 'answer' if exists
+                try:
+                    data = json.loads(enhance_res.text)
+                    enhanced_prompt = data.get("answer", "").strip() or enhance_res.text.strip()
+                except json.JSONDecodeError:
+                    enhanced_prompt = enhance_res.text.strip()
+
+                # --- Flux Schnell Call ---
                 encoded_prompt = urllib.parse.quote(enhanced_prompt)
                 timestamp = str(int(time.time()))
                 img_url = MODELS["flux_url"].format(p=encoded_prompt, t=timestamp)
 
-                # --- Flux Call ---
                 try:
                     img_res = await client.get(img_url, timeout=60.0)
                     img_res.raise_for_status()
@@ -218,12 +212,11 @@ async def ask_ai(
                         detail="Image generation service connection failed."
                     )
 
-                # Return the URL that *would* be called, as per original script
+                # ✅ Return clean output
                 return {
                     "engine": "Flux Schnell",
                     "type": "image",
                     "image_url": img_url,
-                    "original_prompt": user_prompt,
                     "enhanced_prompt": enhanced_prompt
                 }
 
@@ -231,18 +224,14 @@ async def ask_ai(
         # INVALID MODE
         # -------------------------
         else:
-            # This case should be unreachable due to Pydantic/Enum validation
-            # but is kept for exhaustive checking.
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid mode."
             )
 
     except HTTPException:
-        # Re-raise HTTPExceptions so FastAPI handles them
         raise
     except Exception as e:
-        # [FIX] Use logger.error for better traceability
         logger.error(f"[AI Router] Internal Error: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
