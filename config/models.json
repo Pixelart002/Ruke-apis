@@ -1,7 +1,8 @@
 {
-  "gemini_model": "gemini-1.5-flash-latest",
+  "gemini_model": "gemini-1.5-flash",
   "mistral_url": "https://mistral-ai-three.vercel.app/?id={id}&question={q}",
-  "flux_url": "https://flux-schnell.hello-kaiiddo.workers.dev/img?prompt={p}&t={t}"
-
+  "flux_url": "https://flux-schnell.hello-kaiiddo.workers.dev/img?prompt={p}&t={t}",
+  "midjourney_url": "https://midapi.vasarai.net/api/v1/images/generate-image?message={p}",
+  "midjourney_token": "Bearer vasarai"
   
 }
