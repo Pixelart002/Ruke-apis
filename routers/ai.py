@@ -36,7 +36,7 @@ CONFIG_DIR = BASE_DIR / "config"
 
 # === DB COLLECTION ===
 try:
-    if db:
+    if db is not None:
         chat_collection = db["chat_history"]
     else:
         chat_collection = None
