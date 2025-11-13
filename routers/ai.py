@@ -63,6 +63,7 @@ def load_json(path: Path, fallback=None) -> dict:
         logger.warning(f"Failed to load JSON file {path}: {e}")
         return fallback or {}
 
+# Yeh raha woh code jo directory banata hai
 try:
     CONFIG_DIR.mkdir(exist_ok=True)
 except Exception as e:
