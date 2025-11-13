@@ -1,1 +1,5 @@
-{}
+{
+  "gemini_model": "gemini-1.5-flash-latest",
+  "mistral_url": "https://mistral-ai-three.vercel.app/?id={id}&question={q}",
+  "flux_url": "https://flux-schnell.hello-kaiiddo.workers.dev/img?prompt={p}&t={t}"
+}
