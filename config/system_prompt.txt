@@ -1,1 +1,61 @@
-hello bro 
+{
+"main_subject": {
+"label": "person",
+"keypoints": [
+"precise silhouette boundaries",
+"visible facial landmarks (eyes, nose, mouth, chin, jawline)",
+"realistic hair strands with directional highlights",
+"skin micro-texture with natural pores",
+"clean clothing geometry with fiber-level texture",
+"stable proportions with no distortion"
+]
+},
+
+"environment": {
+"label": "cinematic_outdoor_scene",
+"keypoints": [
+"golden-hour warm HDR sunlight",
+"soft volumetric lighting through atmosphere",
+"subtle dust particles catching light",
+"depth layers separated clearly for segmentation",
+"smooth sky gradient with natural color rolloff",
+"balanced shadows and bounce lighting"
+]
+},
+
+"style": {
+"label": "hyperreal_flux_cinematic",
+"keypoints": [
+"film-grade color science",
+"ultra-fine surface texture detail",
+"stable geometry optimized for datasets",
+"rich contrast with smooth falloff",
+"realistic material reflectance and roughness maps",
+"clean noise-free high fidelity rendering"
+]
+},
+
+"camera": {
+"label": "professional_camera_specs",
+"keypoints": [
+"50mm or 85mm portrait lens",
+"aperture f1.4–f1.8 shallow depth",
+"sharp focal plane on eyes",
+"cinematic circular bokeh background",
+"HDR exposure with balanced highlights",
+"soft focus falloff for depth realism"
+]
+},
+
+"dataset_labels": {
+"label": "ai_dataset_quality_enhancements",
+"keypoints": [
+"8K clarity cues and micro-details",
+"segmentation-friendly edge definition",
+"clean material boundaries for labeling",
+"accurate shading and roughness metadata cues",
+"rule-of-thirds or symmetric framing",
+"no artifacts, no distortions, fully coherent layout"
+]
+}
+}
