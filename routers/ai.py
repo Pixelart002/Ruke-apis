@@ -77,7 +77,7 @@ SYSTEM_PROMPT = load_text(
 MODELS = load_json(
     CONFIG_DIR / "models.json",
     {
-        "gemini_model": "gemini-1.5-flash",
+        "gemini_model": "gemini-2.5-flash",
         "mistral_url": "https://mistral-ai-three.vercel.app/?id={id}&question={q}",
         "flux_url": "https://flux-schnell.hello-kaiiddo.workers.dev/img?prompt={p}&t={t}"
     }
@@ -185,7 +185,7 @@ async def ask_ai(
         # -------------------------
         elif mode == AIEngine.IMAGE:
             enhance_instruction = (
-                f"Professionalize and expand this image generation prompt for a high-quality, realistic render: {user_prompt}"
+                f"Professionalize and expand this image generation prompt for a high-quality, writr exactly  ehat user wants.provide their ambition realistic render: {user_prompt}"
             )
             enhance_q = urllib.parse.quote(
                 f"{SYSTEM_PROMPT}\n\n{user_fullname}: {enhance_instruction}" # Yahan bhi user ka naam
