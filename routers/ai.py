@@ -14,7 +14,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from auth import utils as auth_utils  # aapki dependency
-# [NEW] Database import (assume kiya gaya hai ki aapke paas database.py file hai)
 try:
     from database import db
 except ImportError:
@@ -36,7 +35,7 @@ CONFIG_DIR = BASE_DIR / "config"
 
 # === DB COLLECTION ===
 try:
-    if db:
+    if db is not None:
         chat_collection = db["chat_history"]
     else:
         chat_collection = None
@@ -44,7 +43,7 @@ except Exception as e:
     logger.error(f"Chat history collection ('chat_history') nahi mil saki: {e}")
     chat_collection = None
 
-# ... (load_text aur load_json functions yahan... same as before) ...
+# ... (load_text aur load_json functions same hain) ...
 def load_text(path: Path, fallback: str = "") -> str:
     """Safely load a text file."""
     try:
@@ -63,7 +62,7 @@ def load_json(path: Path, fallback=None) -> dict:
         logger.warning(f"Failed to load JSON file {path}: {e}")
         return fallback or {}
 
-# Yeh raha woh code jo directory banata hai
+# Directory creation (Pehle se sahi hai)
 try:
     CONFIG_DIR.mkdir(exist_ok=True)
 except Exception as e:
@@ -74,17 +73,34 @@ SYSTEM_PROMPT = load_text(
     "You are Anya — a professional, emotionally intelligent AI assistant."
 )
 
+# [NEW] Image enhance prompts ko files se load karna
+FLUX_ENHANCE_PROMPT = load_text(
+    CONFIG_DIR / "flux_enhance.txt",
+    # Yeh fallback hai agar file nahi milti
+    "Professionalize and expand this image generation prompt for a high-quality, realistic render: {user_prompt}"
+)
+
+MIDJOURNEY_ENHANCE_PROMPT = load_text(
+    CONFIG_DIR / "midjourney_enhance.txt",
+    # Yeh fallback hai agar file nahi milti
+    "Professionalize and expand this image generation prompt for a high-quality, artistic render (Midjourney style): {user_prompt}"
+)
+
+
 MODELS = load_json(
     CONFIG_DIR / "models.json",
     {
-        "gemini_model": "gemini-2.5-flash",
+        # [FIX] Error 404 ko fix karne ke liye model name 'gemini-1.5-flash-latest' kar diya
+        "gemini_model": "gemini-1.5-flash-latest",
         "mistral_url": "https://mistral-ai-three.vercel.app/?id={id}&question={q}",
-        "flux_url": "https://flux-schnell.hello-kaiiddo.workers.dev/img?prompt={p}&t={t}"
+        "flux_url": "https://flux-schnell.hello-kaiiddo.workers.dev/img?prompt={p}&t={t}",
+        "midjourney_url": "https://midapi.vasarai.net/api/v1/images/generate-image?message={p}",
+        "midjourney_token": "Bearer vasarai"
     }
 )
 
 # === GEMINI CONFIG ===
-# [SECURITY FIX] Environment variable ka NAAM use karein, value nahi.
+# [SECURITY] API Key ko Environment Variable se hi load karna sahi hai
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -95,7 +111,8 @@ else:
 class AIEngine(str, Enum):
     GEMINI = "gemini"
     MISTRAL = "mistral"
-    IMAGE = "image"
+    IMAGE = "image" # Yeh Flux hai
+    MIDJOURNEY = "midjourney" # [NEW] Yeh Vasarai hai
 
 class AIPrompt(BaseModel):
     prompt: str
@@ -109,7 +126,7 @@ async def ask_ai(
     current_user: Dict = Depends(auth_utils.get_current_user)
 ):
     """
-    Master AI endpoint to route requests to Gemini, Mistral, or Flux Schnell (Image Gen).
+    Master AI endpoint to route requests to Gemini, Mistral, Flux, or Midjourney.
     """
     if not request.prompt or not request.prompt.strip():
         raise HTTPException(
@@ -117,17 +134,15 @@ async def ask_ai(
             detail="Directive cannot be empty."
         )
 
-    # [NEW] User ka poora naam (fullname) get karein
-    user_id = current_user.get("_id") # MongoDB ObjectId ke liye
-    user_fullname = str(current_user.get("fullname", "User")) # Default "User"
+    user_id = current_user.get("_id")
+    user_fullname = str(current_user.get("fullname", "User"))
     
     mode = request.mode
     user_prompt = request.prompt.strip()
     
-    # [NEW] Prompt mein User ki jagah user ka poora naam use karein
     full_prompt = f"{SYSTEM_PROMPT}\n\n{user_fullname}: {user_prompt}"
     
-    response_data = {} # Response save karne ke liye
+    response_data = {}
 
     try:
         # -------------------------
@@ -139,7 +154,11 @@ async def ask_ai(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail="Gemini API key not configured."
                 )
-            model = genai.GenerativeModel(MODELS.get("gemini_model", "gemini-1.5-flash"))
+            
+            # [FIX] Config se naya model name (gemini-1.5-flash-latest) istemaal karein
+            model_name = MODELS.get("gemini_model", "gemini-1.5-flash-latest")
+            model = genai.GenerativeModel(model_name)
+            
             response = await model.generate_content_async(full_prompt)
             
             response_data = {
@@ -153,7 +172,7 @@ async def ask_ai(
         # -------------------------
         elif mode == AIEngine.MISTRAL:
             q = urllib.parse.quote(full_prompt)
-            u_id = urllib.parse.quote(str(user_id)) # User ID string mein
+            u_id = urllib.parse.quote(str(user_id))
             mistral_url = MODELS["mistral_url"].format(id=u_id, q=q)
 
             async with httpx.AsyncClient(timeout=30) as client:
@@ -161,13 +180,11 @@ async def ask_ai(
                     res = await client.get(mistral_url)
                     res.raise_for_status()
                 except httpx.HTTPStatusError as http_err:
-                    logger.warning(f"Mistral API request failed: {http_err}")
                     raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Mistral API failed: {http_err.response.status_code}")
                 except httpx.RequestError as req_err:
-                    logger.warning(f"Mistral API connection error: {req_err}")
                     raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Mistral API connection failed.")
 
-                # [NEW] Mistral response ko clean JSON/Text mein convert karein
+                # Clean JSON logic (Pehle se sahi hai)
                 try:
                     data = json.loads(res.text)
                     cleaned_response = data.get("answer", "").strip() or res.text.strip()
@@ -184,12 +201,12 @@ async def ask_ai(
         # FLUX SCHNELL (Image)
         # -------------------------
         elif mode == AIEngine.IMAGE:
-            enhance_instruction =
-                (
-                f" hello: {user_prompt}"
-            )
+            # [NEW] Enhance instruction ko file se load karein
+            # [FIX] Syntax error bhi fix ho gaya hai
+            enhance_instruction = FLUX_ENHANCE_PROMPT.format(user_prompt=user_prompt)
+            
             enhance_q = urllib.parse.quote(
-                f"{SYSTEM_PROMPT}\n\n{user_fullname}: {enhance_instruction}" # Yahan bhi user ka naam
+                f"{SYSTEM_PROMPT}\n\n{user_fullname}: {enhance_instruction}"
             )
             u_id = urllib.parse.quote(str(user_id))
             mistral_url = MODELS["mistral_url"].format(id=u_id, q=enhance_q)
@@ -197,24 +214,19 @@ async def ask_ai(
             enhanced_prompt = ""
 
             async with httpx.AsyncClient(timeout=90.0) as client:
-                # --- Mistral Call ---
+                # --- Mistral Call (for enhancing) ---
                 try:
                     enhance_res = await client.get(mistral_url, timeout=30.0)
                     enhance_res.raise_for_status()
-                except httpx.HTTPStatusError as http_err:
-                    logger.warning(f"Image prompt enhance (Mistral) failed: {http_err}")
-                    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Failed to enhance image prompt via Mistral.")
-                except httpx.RequestError as req_err:
-                    logger.warning(f"Image prompt enhance (Mistral) connection error: {req_err}")
-                    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Image prompt enhancement service connection failed.")
-
-                # ✅ Clean JSON/Text result
-                try:
-                    data = json.loads(enhance_res.text)
-                    enhanced_prompt = data.get("answer", "").strip() or enhance_res.text.strip()
-                except json.JSONDecodeError:
-                    enhanced_prompt = enhance_res.text.strip()
-
+                    try:
+                        data = json.loads(enhance_res.text)
+                        enhanced_prompt = data.get("answer", "").strip() or enhance_res.text.strip()
+                    except json.JSONDecodeError:
+                        enhanced_prompt = enhance_res.text.strip()
+                except Exception as e:
+                    logger.warning(f"Flux enhance (Mistral) failed: {e}. Using original prompt.")
+                    enhanced_prompt = user_prompt # Fallback
+                
                 # --- Flux Schnell Call ---
                 encoded_prompt = urllib.parse.quote(enhanced_prompt)
                 timestamp = str(int(time.time()))
@@ -224,20 +236,81 @@ async def ask_ai(
                     img_res = await client.get(img_url, timeout=60.0)
                     img_res.raise_for_status()
                 except httpx.HTTPStatusError as http_err:
-                    logger.warning(f"Flux Schnell image gen failed: {http_err}")
-                    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Image generation service failed.")
+                    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Flux image generation failed.")
                 except httpx.RequestError as req_err:
-                    logger.warning(f"Flux Schnell connection error: {req_err}")
-                    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Image generation service connection failed.")
+                    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Flux image service connection failed.")
 
-                # ✅ Return clean output
                 response_data = {
                     "engine": "Flux Schnell",
                     "type": "image",
                     "image_url": img_url,
-                    "original_prompt": user_prompt, # [FIX] Original prompt add kiya
+                    "original_prompt": user_prompt,
                     "enhanced_prompt": enhanced_prompt
                 }
+        
+        # -------------------------
+        # VASARAI (Midjourney)
+        # -------------------------
+        elif mode == AIEngine.MIDJOURNEY:
+            # [NEW] Midjourney ke liye prompt enhancement
+            enhance_instruction = MIDJOURNEY_ENHANCE_PROMPT.format(user_prompt=user_prompt)
+            
+            enhance_q = urllib.parse.quote(
+                f"{SYSTEM_PROMPT}\n\n{user_fullname}: {enhance_instruction}"
+            )
+            u_id = urllib.parse.quote(str(user_id))
+            mistral_url = MODELS["mistral_url"].format(id=u_id, q=enhance_q)
+
+            enhanced_prompt = ""
+            
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                # --- Mistral Call (for enhancing) ---
+                try:
+                    enhance_res = await client.get(mistral_url, timeout=30.0)
+                    enhance_res.raise_for_status()
+                    try:
+                        data = json.loads(enhance_res.text)
+                        enhanced_prompt = data.get("answer", "").strip() or enhance_res.text.strip()
+                    except json.JSONDecodeError:
+                        enhanced_prompt = enhance_res.text.strip()
+                except Exception as e:
+                    logger.warning(f"Midjourney enhance (Mistral) failed: {e}. Using original prompt.")
+                    enhanced_prompt = user_prompt # Fallback
+
+                # --- Vasarai (Midjourney) Call ---
+                encoded_prompt = urllib.parse.quote(enhanced_prompt)
+                mj_url = MODELS["midjourney_url"].format(p=encoded_prompt)
+                mj_token = MODELS.get("midjourney_token", "Bearer vasarai")
+
+                try:
+                    res = await client.post(
+                        mj_url,
+                        headers={"Authorization": mj_token},
+                        timeout=60.0
+                    )
+                    res.raise_for_status()
+                    data = res.json()
+                    cdn_url = data.get("cdn_url")
+
+                    if not cdn_url:
+                        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Midjourney API failed to return image URL.")
+
+                    response_data = {
+                        "engine": "Midjourney (Vasarai)",
+                        "type": "image",
+                        "image_url": cdn_url,
+                        "original_prompt": user_prompt,
+                        "enhanced_prompt": enhanced_prompt
+                    }
+                except httpx.HTTPStatusError as http_err:
+                    logger.error(f"Midjourney API request failed: {http_err}")
+                    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Midjourney API failed.")
+                except httpx.RequestError as req_err:
+                    logger.error(f"Midjourney API connection error: {req_err}")
+                    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Midjourney API connection failed.")
+                except Exception as e:
+                    logger.error(f"Midjourney response error: {e}")
+                    raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Midjourney response parsing failed.")
 
         # -------------------------
         # INVALID MODE
@@ -245,10 +318,10 @@ async def ask_ai(
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid mode."
+                detail="Invalid mode. Choose 'gemini', 'mistral', 'image', or 'midjourney'."
             )
 
-        # [NEW] Chat history ko database mein save karein
+        # [Database Save Logic] (Pehle se sahi hai)
         if chat_collection is not None:
             try:
                 chat_log = {
@@ -256,21 +329,19 @@ async def ask_ai(
                     "prompt": user_prompt,
                     "mode": mode.value,
                     "engine": response_data.get("engine"),
-                    "response_text": response_data.get("response"), # Text/Mistral ke liye
-                    "image_url": response_data.get("image_url"),   # Image ke liye
-                    "enhanced_prompt": response_data.get("enhanced_prompt"), # Image ke liye
+                    "response_text": response_data.get("response"),
+                    "image_url": response_data.get("image_url"),
+                    "enhanced_prompt": response_data.get("enhanced_prompt"),
                     "created_at": datetime.now(timezone.utc)
                 }
                 chat_collection.insert_one(chat_log)
             except Exception as e:
                 logger.error(f"Chat log ko DB mein save karne mein fail: {e}")
-                # Fail hone par bhi user ko response bhej dein
 
-        # Response return karein
         return response_data
 
     except HTTPException:
-        raise # FastAPI errors ko waise hi pass karein
+        raise
     except Exception as e:
         logger.error(f"[AI Router] Internal Error: {e}", exc_info=True)
         raise HTTPException(
