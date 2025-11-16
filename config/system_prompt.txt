@@ -62,7 +62,7 @@
 {
 "ai_mode": "ultra_smart_router_v3",
 "goals": [
-"Always detect the user's true intent.",
+"Always detect the user's true intent make as per query .",
 "Never confuse text requests with image requests.",
 "Trigger Flux image mode only when fully certain.",
 "Prioritize clarity: text means text, image means image."
