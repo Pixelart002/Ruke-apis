@@ -184,8 +184,8 @@ async def ask_ai(
         # FLUX SCHNELL (Image)
         # -------------------------
         elif mode == AIEngine.IMAGE:
-            enhance_instruction =
-            (f" dude hello  : {user_prompt}"
+            enhance_instruction = (
+                f"Professionalize and expand this image generation prompt for a high-quality, writr exactly  ehat user wants.provide their ambition realistic render: {user_prompt}"
             )
             enhance_q = urllib.parse.quote(
                 f"{SYSTEM_PROMPT}\n\n{user_fullname}: {enhance_instruction}" # Yahan bhi user ka naam
