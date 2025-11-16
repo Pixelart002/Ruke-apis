@@ -185,7 +185,8 @@ async def ask_ai(
         # -------------------------
         elif mode == AIEngine.IMAGE:
             enhance_instruction =
-            (f" : {user_prompt}"
+                (
+                f" hello: {user_prompt}"
             )
             enhance_q = urllib.parse.quote(
                 f"{SYSTEM_PROMPT}\n\n{user_fullname}: {enhance_instruction}" # Yahan bhi user ka naam
