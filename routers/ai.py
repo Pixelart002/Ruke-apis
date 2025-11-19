@@ -46,7 +46,7 @@ BACKEND_URL = "https://giant-noell-pixelart002-1c1d1fda.koyeb.app"
 # === DATA MODELS ===
 
 class ToolType(str, Enum):
-    TEXT = "text"      # Mistral
+    TEXT = "text"      # Mistral/Pollinations
     IMAGE = "image"    # Flux
     EDITOR = "editor"  # Code Editor / VFS
     REVIEW = "review"  # Code Reviewer
@@ -122,37 +122,37 @@ async def fetch_dynamic_system_prompt(tool_id: str) -> str:
     return tool.get("system_prompt", "")
 
 async def execute_mistral_request(user_id: str, prompt: str, system_prompt: str) -> str:
-    """Executes request to Mistral API and cleans the response."""
-    base_url = "https://mistral-ai-three.vercel.app/"
-    
+    """
+    Executes request to AI Provider.
+    UPDATED: Switched to Pollinations.ai (More stable & Free) 
+    """
     # Combine System + User Prompt
-    full_prompt = f"SYSTEM: {system_prompt}\n\nUSER: {prompt}"
+    full_prompt = f"{system_prompt}\n\nUser Question: {prompt}\n\nAnswer:"
     
-    params = {
-        "id": str(user_id),
-        "question": full_prompt
-    }
-    # Manual encoding to ensure special chars work
-    encoded_params = urllib.parse.urlencode(params) 
-    final_url = f"{base_url}?{encoded_params}"
+    # URL Encoding
+    encoded_prompt = urllib.parse.quote(full_prompt)
+    
+    # Using Pollinations.ai (Free, No Key required, very stable)
+    # Added seed for randomness
+    seed = secrets.randbelow(99999)
+    target_url = f"https://text.pollinations.ai/{encoded_prompt}?model=openai&seed={seed}"
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
-            resp = await client.get(final_url)
+            # Request bhej rahe hain
+            resp = await client.get(target_url)
             resp.raise_for_status()
             
-            # [STRICT PARSING] Extract 'answer' object only
-            try:
-                data = resp.json()
-                if isinstance(data, dict) and "answer" in data:
-                    return data["answer"]
-                return resp.text
-            except json.JSONDecodeError:
-                return resp.text
-                
+            # Pollinations returns raw text, no JSON parsing needed
+            return resp.text.strip()
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"AI HTTP Error: {e}")
+            return f"[Error] AI Provider returned status {e.response.status_code}. Try again later."
+            
         except Exception as e:
-            logger.error(f"Mistral API Error: {e}")
-            return "AI service is currently unavailable. Please try again."
+            logger.error(f"AI Connection Error: {e}")
+            return f"[System Error] Connection failed. Details: {str(e)}"
 
 # === CORE ENDPOINTS ===
 
@@ -269,7 +269,7 @@ async def generate_image_handler(
     chats = get_db_collection("chat_history")
     user_id = str(current_user["_id"])
     
-    # 1. Enhance Prompt via Mistral
+    # 1. Enhance Prompt via Mistral (now Pollinations)
     enhancer_prompt = f"Refine this prompt for an AI image generator (Flux) to be photorealistic: {prompt}"
     enhanced_prompt = await execute_mistral_request(user_id, enhancer_prompt, "You are a prompt engineer.")
     
@@ -314,9 +314,6 @@ async def generate_image_handler(
         final_chat_id = str(res.inserted_id)
 
     # 5. Generate Proxy Link (Not exposing DB, but serving the content)
-    # Since we sent Data URI, frontend handles display. 
-    # For download, we can create a temporary route or just use the Data URI on frontend with <a download>.
-    
     return {
         "status": "success",
         "chat_id": final_chat_id,
@@ -394,4 +391,4 @@ async def generate_api_key(current_user: Dict = Depends(auth_utils.get_current_u
 # Provides backward compatibility for older frontend calls if any
 @router.get("/health")
 async def health_check():
-    return {"status": "legacy_mode_on", "engine": "Mistral+Flux"}
+    return {"status": "legacy_mode_on", "engine": "Pollinations+Flux"}
