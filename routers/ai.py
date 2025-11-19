@@ -1,278 +1,397 @@
 import os
 import time
 import json
-import urllib.parse
 import logging
-from pathlib import Path
-from typing import Dict
+import urllib.parse
+import base64
+import io
+import secrets
+import zipfile
+from typing import Dict, List, Optional, Any, Union
 from enum import Enum
 from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
-import google.generativeai as genai
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request
+from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel, Field
+from bson import ObjectId
 
-from auth import utils as auth_utils  # aapki dependency
-# [NEW] Database import (assume kiya gaya hai ki aapke paas database.py file hai)
+# === LIBRARIES FOR FILE PARSING ===
+try:
+    import pypdf
+except ImportError:
+    pypdf = None # Graceful fallback
+
+from auth import utils as auth_utils 
+
+# === DATABASE IMPORT ===
 try:
     from database import db
 except ImportError:
     db = None
-    logger.error("database.py file nahi mili. Chat history save nahi hogi.")
+    logging.error("CRITICAL: database.py not found.")
 
-# === ROUTER ===
-router = APIRouter(
-    prefix="/ai",
-    tags=["AI Core"]
-)
+# === CONFIGURATION ===
+logger = logging.getLogger("AI_CORE_LEGACY")
+logger.setLevel(logging.INFO)
 
-# === LOGGER ===
-logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/ai", tags=["AI Core Legacy"])
 
-# === CONFIG PATHS ===
-BASE_DIR = Path(__file__).resolve().parent.parent
-CONFIG_DIR = BASE_DIR / "config"
+# === CONSTANTS ===
+FRONTEND_URL = "https://yuku-nine.vercel.app"
+BACKEND_URL = "https://giant-noell-pixelart002-1c1d1fda.koyeb.app"
 
-# === DB COLLECTION ===
-try:
-    if db:
-        chat_collection = db["chat_history"]
-    else:
-        chat_collection = None
-except Exception as e:
-    logger.error(f"Chat history collection ('chat_history') nahi mil saki: {e}")
-    chat_collection = None
+# === DATA MODELS ===
 
-# ... (load_text aur load_json functions yahan... same as before) ...
-def load_text(path: Path, fallback: str = "") -> str:
-    """Safely load a text file."""
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    except Exception as e:
-        logger.warning(f"Failed to load text file {path}: {e}")
-        return fallback
+class ToolType(str, Enum):
+    TEXT = "text"      # Mistral
+    IMAGE = "image"    # Flux
+    EDITOR = "editor"  # Code Editor / VFS
+    REVIEW = "review"  # Code Reviewer
 
-def load_json(path: Path, fallback=None) -> dict:
-    """Safely load a JSON file."""
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        logger.warning(f"Failed to load JSON file {path}: {e}")
-        return fallback or {}
+class VFSActionType(str, Enum):
+    CREATE = "create"
+    UPDATE = "update"
+    DELETE = "delete"
+    READ = "read"
 
-# Yeh raha woh code jo directory banata hai
-try:
-    CONFIG_DIR.mkdir(exist_ok=True)
-except Exception as e:
-    logger.error(f"Could not create config directory at {CONFIG_DIR}: {e}")
+class VFSRequest(BaseModel):
+    filename: str
+    content: Optional[str] = None
+    action: VFSActionType
 
-SYSTEM_PROMPT = load_text(
-    CONFIG_DIR / "system_prompt.txt",
-    "You are Anya — a professional, emotionally intelligent AI assistant."
-)
-
-MODELS = load_json(
-    CONFIG_DIR / "models.json",
-    {
-        "gemini_model": "gemini-2.5-flash",
-        "mistral_url": "https://mistral-ai-three.vercel.app/?id={id}&question={q}",
-        "flux_url": "https://flux-schnell.hello-kaiiddo.workers.dev/img?prompt={p}&t={t}"
-    }
-)
-
-# === GEMINI CONFIG ===
-# [SECURITY FIX] Environment variable ka NAAM use karein, value nahi.
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-else:
-    logger.warning("GEMINI_API_KEY environment variable not set.")
-
-# === REQUEST MODELS ===
-class AIEngine(str, Enum):
-    GEMINI = "gemini"
-    MISTRAL = "mistral"
-    IMAGE = "image"
-
-class AIPrompt(BaseModel):
+class AIRequest(BaseModel):
     prompt: str
-    mode: AIEngine = AIEngine.GEMINI
+    tool_id: str = "default_mistral" # Dynamic Tool ID from DB
+    chat_id: Optional[str] = None # If None, creates new chat
+    context_files: Optional[List[str]] = None # List of file contents parsed frontend side or IDs
 
+# === HELPER FUNCTIONS ===
 
-# === MAIN ROUTE ===
+def get_db_collection(name: str):
+    if db is None:
+        raise HTTPException(500, "Database connection failed.")
+    return db[name]
+
+async def parse_uploaded_file(file: UploadFile) -> str:
+    """Parses PDF, TXT, ZIP into a text string for the AI context."""
+    content_str = ""
+    filename = file.filename.lower()
+    
+    try:
+        file_bytes = await file.read()
+        
+        if filename.endswith(".pdf") and pypdf:
+            reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+            for page in reader.pages:
+                content_str += page.extract_text() + "\n"
+        
+        elif filename.endswith(".zip"):
+            with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+                for zname in z.namelist():
+                    if not zname.endswith("/"): # Skip directories
+                        with z.open(zname) as zf:
+                            try:
+                                content_str += f"\n--- FILE: {zname} ---\n"
+                                content_str += zf.read().decode('utf-8', errors='ignore')
+                            except:
+                                pass
+        else:
+            # Assume text/code
+            content_str = file_bytes.decode('utf-8', errors='ignore')
+            
+    except Exception as e:
+        logger.error(f"File parse error: {e}")
+        return f"[Error reading file {filename}]"
+        
+    return f"\n=== CONTEXT FILE: {filename} ===\n{content_str}\n"
+
+async def fetch_dynamic_system_prompt(tool_id: str) -> str:
+    """Fetches the system prompt dynamically from the DB."""
+    tools = get_db_collection("ai_tools")
+    tool = tools.find_one({"slug": tool_id})
+    
+    if not tool:
+        # Fallback defaults if DB entry missing
+        if "image" in tool_id:
+            return "Professionalize this prompt for a realistic render."
+        return "You are an advanced AI assistant. Provide concise, accurate answers."
+        
+    return tool.get("system_prompt", "")
+
+async def execute_mistral_request(user_id: str, prompt: str, system_prompt: str) -> str:
+    """Executes request to Mistral API and cleans the response."""
+    base_url = "https://mistral-ai-three.vercel.app/"
+    
+    # Combine System + User Prompt
+    full_prompt = f"SYSTEM: {system_prompt}\n\nUSER: {prompt}"
+    
+    params = {
+        "id": str(user_id),
+        "question": full_prompt
+    }
+    # Manual encoding to ensure special chars work
+    encoded_params = urllib.parse.urlencode(params) 
+    final_url = f"{base_url}?{encoded_params}"
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            resp = await client.get(final_url)
+            resp.raise_for_status()
+            
+            # [STRICT PARSING] Extract 'answer' object only
+            try:
+                data = resp.json()
+                if isinstance(data, dict) and "answer" in data:
+                    return data["answer"]
+                return resp.text
+            except json.JSONDecodeError:
+                return resp.text
+                
+        except Exception as e:
+            logger.error(f"Mistral API Error: {e}")
+            return "AI service is currently unavailable. Please try again."
+
+# === CORE ENDPOINTS ===
+
 @router.post("/ask")
-async def ask_ai(
-    request: AIPrompt,
+async def master_ai_handler(
+    prompt: str = Form(...),
+    tool_id: str = Form("mistral_default"),
+    chat_id: Optional[str] = Form(None),
+    files: List[UploadFile] = File(None),
     current_user: Dict = Depends(auth_utils.get_current_user)
 ):
     """
-    Master AI endpoint to route requests to Gemini, Mistral, or Flux Schnell (Image Gen).
+    Master Endpoint: Handles Text, Code Editing, and File Context.
     """
-    if not request.prompt or not request.prompt.strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Directive cannot be empty."
-        )
-
-    # [NEW] User ka poora naam (fullname) get karein
-    user_id = current_user.get("_id") # MongoDB ObjectId ke liye
-    user_fullname = str(current_user.get("fullname", "User")) # Default "User"
+    chats = get_db_collection("chat_history")
+    tools = get_db_collection("ai_tools")
     
-    mode = request.mode
-    user_prompt = request.prompt.strip()
+    user_id = str(current_user["_id"])
+    user_name = current_user.get("fullname", "User")
     
-    # [NEW] Prompt mein User ki jagah user ka poora naam use karein
-    full_prompt = f"{SYSTEM_PROMPT}\n\n{user_fullname}: {user_prompt}"
-    
-    response_data = {} # Response save karne ke liye
-
-    try:
-        # -------------------------
-        # GEMINI (Text)
-        # -------------------------
-        if mode == AIEngine.GEMINI:
-            if not GEMINI_API_KEY:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Gemini API key not configured."
-                )
-            model = genai.GenerativeModel(MODELS.get("gemini_model", "gemini-1.5-flash"))
-            response = await model.generate_content_async(full_prompt)
+    # 1. Prepare Context (Files)
+    file_context = ""
+    if files:
+        for file in files:
+            file_context += await parse_uploaded_file(file)
             
-            response_data = {
-                "engine": "Gemini",
-                "type": "text",
-                "response": response.text.strip()
-            }
-
-        # -------------------------
-        # MISTRAL (Text)
-        # -------------------------
-        elif mode == AIEngine.MISTRAL:
-            q = urllib.parse.quote(full_prompt)
-            u_id = urllib.parse.quote(str(user_id)) # User ID string mein
-            mistral_url = MODELS["mistral_url"].format(id=u_id, q=q)
-
-            async with httpx.AsyncClient(timeout=30) as client:
-                try:
-                    res = await client.get(mistral_url)
-                    res.raise_for_status()
-                except httpx.HTTPStatusError as http_err:
-                    logger.warning(f"Mistral API request failed: {http_err}")
-                    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Mistral API failed: {http_err.response.status_code}")
-                except httpx.RequestError as req_err:
-                    logger.warning(f"Mistral API connection error: {req_err}")
-                    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Mistral API connection failed.")
-
-                # [NEW] Mistral response ko clean JSON/Text mein convert karein
-                try:
-                    data = json.loads(res.text)
-                    cleaned_response = data.get("answer", "").strip() or res.text.strip()
-                except json.JSONDecodeError:
-                    cleaned_response = res.text.strip()
-
-                response_data = {
-                    "engine": "Mistral",
-                    "type": "text",
-                    "response": cleaned_response
-                }
-
-        # -------------------------
-        # FLUX SCHNELL (Image)
-        # -------------------------
-        elif mode == AIEngine.IMAGE:
-            enhance_instruction = (
-                f"Professionalize and expand this image generation prompt for a high-quality, writr exactly  ehat user wants.provide their ambition realistic render: {user_prompt}"
-            )
-            enhance_q = urllib.parse.quote(
-                f"{SYSTEM_PROMPT}\n\n{user_fullname}: {enhance_instruction}" # Yahan bhi user ka naam
-            )
-            u_id = urllib.parse.quote(str(user_id))
-            mistral_url = MODELS["mistral_url"].format(id=u_id, q=enhance_q)
-
-            enhanced_prompt = ""
-
-            async with httpx.AsyncClient(timeout=90.0) as client:
-                # --- Mistral Call ---
-                try:
-                    enhance_res = await client.get(mistral_url, timeout=30.0)
-                    enhance_res.raise_for_status()
-                except httpx.HTTPStatusError as http_err:
-                    logger.warning(f"Image prompt enhance (Mistral) failed: {http_err}")
-                    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Failed to enhance image prompt via Mistral.")
-                except httpx.RequestError as req_err:
-                    logger.warning(f"Image prompt enhance (Mistral) connection error: {req_err}")
-                    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Image prompt enhancement service connection failed.")
-
-                # ✅ Clean JSON/Text result
-                try:
-                    data = json.loads(enhance_res.text)
-                    enhanced_prompt = data.get("answer", "").strip() or enhance_res.text.strip()
-                except json.JSONDecodeError:
-                    enhanced_prompt = enhance_res.text.strip()
-
-                # --- Flux Schnell Call ---
-                encoded_prompt = urllib.parse.quote(enhanced_prompt)
-                timestamp = str(int(time.time()))
-                img_url = MODELS["flux_url"].format(p=encoded_prompt, t=timestamp)
-
-                try:
-                    img_res = await client.get(img_url, timeout=60.0)
-                    img_res.raise_for_status()
-                except httpx.HTTPStatusError as http_err:
-                    logger.warning(f"Flux Schnell image gen failed: {http_err}")
-                    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Image generation service failed.")
-                except httpx.RequestError as req_err:
-                    logger.warning(f"Flux Schnell connection error: {req_err}")
-                    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Image generation service connection failed.")
-
-                # ✅ Return clean output
-                response_data = {
-                    "engine": "Flux Schnell",
-                    "type": "image",
-                    "image_url": img_url,
-                    "original_prompt": user_prompt, # [FIX] Original prompt add kiya
-                    "enhanced_prompt": enhanced_prompt
-                }
-
-        # -------------------------
-        # INVALID MODE
-        # -------------------------
+    final_prompt = f"{file_context}\n\n{prompt}"
+    
+    # 2. Identify Tool & Logic
+    # Check DB for tool configuration
+    tool_config = tools.find_one({"slug": tool_id})
+    
+    if not tool_config:
+        # Auto-create default tools if missing
+        if tool_id == "mistral_default":
+            tool_config = {"type": "text", "slug": "mistral_default", "system_prompt": "You are a helpful assistant."}
+        elif tool_id == "code_editor":
+            tool_config = {"type": "editor", "slug": "code_editor", "system_prompt": "You are a Coding Expert. Return ONLY valid XML/JSON blocks for file operations."}
         else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid mode."
-            )
+            raise HTTPException(404, "Tool not found")
 
-        # [NEW] Chat history ko database mein save karein
-        if chat_collection is not None:
-            try:
-                chat_log = {
-                    "user_id": user_id,
-                    "prompt": user_prompt,
-                    "mode": mode.value,
-                    "engine": response_data.get("engine"),
-                    "response_text": response_data.get("response"), # Text/Mistral ke liye
-                    "image_url": response_data.get("image_url"),   # Image ke liye
-                    "enhanced_prompt": response_data.get("enhanced_prompt"), # Image ke liye
-                    "created_at": datetime.now(timezone.utc)
-                }
-                chat_collection.insert_one(chat_log)
-            except Exception as e:
-                logger.error(f"Chat log ko DB mein save karne mein fail: {e}")
-                # Fail hone par bhi user ko response bhej dein
+    response_payload = {
+        "user_id": user_id,
+        "tool": tool_id,
+        "timestamp": datetime.now(timezone.utc),
+        "input": prompt,
+        "files_processed": [f.filename for f in files] if files else []
+    }
 
-        # Response return karein
-        return response_data
+    # 3. Execution Logic based on Type
+    if tool_config.get("type") == "image":
+        # Redirect to image handler logic internally
+        return await generate_image_handler(prompt, user_id, chat_id)
 
-    except HTTPException:
-        raise # FastAPI errors ko waise hi pass karein
-    except Exception as e:
-        logger.error(f"[AI Router] Internal Error: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="AI Core encountered an internal error."
+    elif tool_config.get("type") == "editor":
+        # VFS Logic: Add VFS state to prompt
+        chat_obj = chats.find_one({"_id": ObjectId(chat_id)}) if chat_id else None
+        vfs_state = chat_obj.get("vfs_state", {}) if chat_obj else {}
+        
+        vfs_context = f"\nCURRENT FILE SYSTEM STATE: {json.dumps(list(vfs_state.keys()))}"
+        system_prompt = tool_config.get("system_prompt") + vfs_context
+        
+        raw_response = await execute_mistral_request(user_id, final_prompt, system_prompt)
+        
+        # Parse AI response for File Actions (Mocking parsing logic here)
+        # Assuming AI returns XML like <file name="main.py">code</file>
+        # In production, use a regex parser here to update vfs_state
+        response_payload["response"] = raw_response
+        response_payload["vfs_update"] = True # Signal frontend to refresh file tree
+
+    else:
+        # Standard Text / Mistral
+        system_prompt = tool_config.get("system_prompt", "")
+        response_text = await execute_mistral_request(user_id, final_prompt, system_prompt)
+        response_payload["response"] = response_text
+
+    # 4. Database Persistence (1 Chat = 1 Object Logic)
+    if chat_id and ObjectId.is_valid(chat_id):
+        chats.update_one(
+            {"_id": ObjectId(chat_id)},
+            {
+                "$push": {"messages": response_payload},
+                "$set": {"last_updated": datetime.now(timezone.utc)}
+            }
         )
+        final_chat_id = chat_id
+    else:
+        # Create New Chat Object
+        new_chat = {
+            "user_id": user_id,
+            "title": prompt[:30] + "...",
+            "created_at": datetime.now(timezone.utc),
+            "vfs_state": {}, # Virtual File System Root
+            "messages": [response_payload]
+        }
+        res = chats.insert_one(new_chat)
+        final_chat_id = str(res.inserted_id)
+
+    return {
+        "status": "success",
+        "chat_id": final_chat_id,
+        "data": response_payload
+    }
+
+@router.post("/generate-image")
+async def generate_image_handler(
+    prompt: str = Form(...),
+    current_user: Dict = Depends(auth_utils.get_current_user),
+    chat_id: Optional[str] = Form(None)
+):
+    """
+    Generates image via Flux, downloads it, stores Base64 in DB, returns to User.
+    """
+    chats = get_db_collection("chat_history")
+    user_id = str(current_user["_id"])
+    
+    # 1. Enhance Prompt via Mistral
+    enhancer_prompt = f"Refine this prompt for an AI image generator (Flux) to be photorealistic: {prompt}"
+    enhanced_prompt = await execute_mistral_request(user_id, enhancer_prompt, "You are a prompt engineer.")
+    
+    # 2. Call Flux
+    timestamp = str(int(time.time()))
+    flux_url = f"https://flux-schnell.hello-kaiiddo.workers.dev/img?prompt={urllib.parse.quote(enhanced_prompt)}&t={timestamp}"
+    
+    # 3. Download & Convert to Base64 (The "Temporary DB Store" Logic)
+    try:
+        async with httpx.AsyncClient() as client:
+            img_resp = await client.get(flux_url, timeout=90.0)
+            img_resp.raise_for_status()
+            image_bytes = img_resp.content
+            
+            # Convert to Base64 for storage
+            b64_string = base64.b64encode(image_bytes).decode('utf-8')
+            data_uri = f"data:image/jpeg;base64,{b64_string}"
+            
+    except Exception as e:
+        logger.error(f"Image Gen Failed: {e}")
+        raise HTTPException(503, "Image generation failed.")
+
+    # 4. Save to DB
+    message_payload = {
+        "user_id": user_id,
+        "tool": "flux_image",
+        "input": prompt,
+        "enhanced_prompt": enhanced_prompt,
+        "image_data": data_uri, # Stored directly in DB
+        "timestamp": datetime.now(timezone.utc)
+    }
+
+    if chat_id and ObjectId.is_valid(chat_id):
+        chats.update_one({"_id": ObjectId(chat_id)}, {"$push": {"messages": message_payload}})
+        final_chat_id = chat_id
+    else:
+        res = chats.insert_one({
+            "user_id": user_id,
+            "title": "Image Generation",
+            "messages": [message_payload]
+        })
+        final_chat_id = str(res.inserted_id)
+
+    # 5. Generate Proxy Link (Not exposing DB, but serving the content)
+    # Since we sent Data URI, frontend handles display. 
+    # For download, we can create a temporary route or just use the Data URI on frontend with <a download>.
+    
+    return {
+        "status": "success",
+        "chat_id": final_chat_id,
+        "image_url": data_uri, # Immediate display
+        "download_filename": f"gen_{timestamp}.jpg"
+    }
+
+# === MANAGEMENT ENDPOINTS (Frontend Dynamic Control) ===
+
+@router.post("/tools/add")
+async def add_new_tool(
+    name: str,
+    slug: str,
+    system_prompt: str,
+    tool_type: ToolType,
+    current_user: Dict = Depends(auth_utils.get_current_user)
+):
+    """
+    Allows Frontend to register new AI Tools/MVPs dynamically.
+    """
+    tools = get_db_collection("ai_tools")
+    
+    new_tool = {
+        "name": name,
+        "slug": slug, # e.g., 'react_coder', 'legal_advisor'
+        "system_prompt": system_prompt,
+        "type": tool_type,
+        "created_by": current_user["_id"],
+        "created_at": datetime.now(timezone.utc)
+    }
+    
+    tools.update_one({"slug": slug}, {"$set": new_tool}, upsert=True)
+    return {"status": "Tool registered", "slug": slug}
+
+@router.post("/share/{chat_id}")
+async def create_share_link(
+    chat_id: str,
+    current_user: Dict = Depends(auth_utils.get_current_user)
+):
+    """
+    Generates a public share link for a specific chat.
+    """
+    chats = get_db_collection("chat_history")
+    chat = chats.find_one({"_id": ObjectId(chat_id), "user_id": str(current_user["_id"])})
+    
+    if not chat:
+        raise HTTPException(404, "Chat not found")
+        
+    # Generate a secure, non-guessable share ID
+    share_token = secrets.token_urlsafe(16)
+    
+    chats.update_one(
+        {"_id": ObjectId(chat_id)},
+        {"$set": {"share_token": share_token, "is_public": True}}
+    )
+    
+    return {
+        "share_url": f"{FRONTEND_URL}/share/{share_token}",
+        "api_access_url": f"{BACKEND_URL}/ai/shared/{share_token}"
+    }
+
+@router.post("/api-key/generate")
+async def generate_api_key(current_user: Dict = Depends(auth_utils.get_current_user)):
+    """Generates a unique SDK API key for the user."""
+    users = get_db_collection("users")
+    api_key = f"sk_{secrets.token_hex(24)}"
+    
+    users.update_one(
+        {"_id": current_user["_id"]},
+        {"$set": {"sdk_api_key": api_key}}
+    )
+    return {"api_key": api_key}
+
+# === LEGACY / COMPATIBILITY ===
+# Provides backward compatibility for older frontend calls if any
+@router.get("/health")
+async def health_check():
+    return {"status": "legacy_mode_on", "engine": "Mistral+Flux"}
