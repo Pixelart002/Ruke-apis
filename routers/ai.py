@@ -46,7 +46,7 @@ BACKEND_URL = "https://giant-noell-pixelart002-1c1d1fda.koyeb.app"
 # === DATA MODELS ===
 
 class ToolType(str, Enum):
-    TEXT = "text"      # Mistral/Pollinations
+    TEXT = "text"      # Pollinations (Was Mistral)
     IMAGE = "image"    # Flux
     EDITOR = "editor"  # Code Editor / VFS
     REVIEW = "review"  # Code Reviewer
@@ -123,36 +123,29 @@ async def fetch_dynamic_system_prompt(tool_id: str) -> str:
 
 async def execute_mistral_request(user_id: str, prompt: str, system_prompt: str) -> str:
     """
-    Executes request to AI Provider.
-    UPDATED: Switched to Pollinations.ai (More stable & Free) 
+    Executes request using Pollinations.ai (Replacing Mistral).
+    Robust, Free, and High Speed.
     """
     # Combine System + User Prompt
-    full_prompt = f"{system_prompt}\n\nUser Question: {prompt}\n\nAnswer:"
+    full_prompt = f"{system_prompt}\n\nUser: {prompt}\n\nAI:"
     
-    # URL Encoding
+    # Pollinations URL Construction
     encoded_prompt = urllib.parse.quote(full_prompt)
-    
-    # Using Pollinations.ai (Free, No Key required, very stable)
-    # Added seed for randomness
-    seed = secrets.randbelow(99999)
-    target_url = f"https://text.pollinations.ai/{encoded_prompt}?model=openai&seed={seed}"
+    # We use model=openai (or search) for best reasoning
+    target_url = f"https://text.pollinations.ai/{encoded_prompt}?model=openai&seed={secrets.randbelow(99999)}"
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
-            # Request bhej rahe hain
+            # Pollinations GET request returns raw text
             resp = await client.get(target_url)
             resp.raise_for_status()
             
-            # Pollinations returns raw text, no JSON parsing needed
+            # Pollinations returns direct text, so we just return content
             return resp.text.strip()
-
-        except httpx.HTTPStatusError as e:
-            logger.error(f"AI HTTP Error: {e}")
-            return f"[Error] AI Provider returned status {e.response.status_code}. Try again later."
-            
+                
         except Exception as e:
-            logger.error(f"AI Connection Error: {e}")
-            return f"[System Error] Connection failed. Details: {str(e)}"
+            logger.error(f"Pollinations AI Error: {e}")
+            return f"AI service error: {str(e)}"
 
 # === CORE ENDPOINTS ===
 
@@ -171,7 +164,6 @@ async def master_ai_handler(
     tools = get_db_collection("ai_tools")
     
     user_id = str(current_user["_id"])
-    user_name = current_user.get("fullname", "User")
     
     # 1. Prepare Context (Files)
     file_context = ""
@@ -182,15 +174,16 @@ async def master_ai_handler(
     final_prompt = f"{file_context}\n\n{prompt}"
     
     # 2. Identify Tool & Logic
-    # Check DB for tool configuration
     tool_config = tools.find_one({"slug": tool_id})
     
     if not tool_config:
-        # Auto-create default tools if missing
         if tool_id == "mistral_default":
             tool_config = {"type": "text", "slug": "mistral_default", "system_prompt": "You are a helpful assistant."}
         elif tool_id == "code_editor":
             tool_config = {"type": "editor", "slug": "code_editor", "system_prompt": "You are a Coding Expert. Return ONLY valid XML/JSON blocks for file operations."}
+        elif tool_id == "image": 
+            # Fallback if frontend sends just 'image' as tool_id
+            tool_config = {"type": "image", "slug": "image_gen"} 
         else:
             raise HTTPException(404, "Tool not found")
 
@@ -205,10 +198,10 @@ async def master_ai_handler(
     # 3. Execution Logic based on Type
     if tool_config.get("type") == "image":
         # Redirect to image handler logic internally
-        return await generate_image_handler(prompt, user_id, chat_id)
+        return await generate_image_handler(prompt, current_user, chat_id)
 
     elif tool_config.get("type") == "editor":
-        # VFS Logic: Add VFS state to prompt
+        # VFS Logic
         chat_obj = chats.find_one({"_id": ObjectId(chat_id)}) if chat_id else None
         vfs_state = chat_obj.get("vfs_state", {}) if chat_obj else {}
         
@@ -217,19 +210,16 @@ async def master_ai_handler(
         
         raw_response = await execute_mistral_request(user_id, final_prompt, system_prompt)
         
-        # Parse AI response for File Actions (Mocking parsing logic here)
-        # Assuming AI returns XML like <file name="main.py">code</file>
-        # In production, use a regex parser here to update vfs_state
         response_payload["response"] = raw_response
-        response_payload["vfs_update"] = True # Signal frontend to refresh file tree
+        response_payload["vfs_update"] = True 
 
     else:
-        # Standard Text / Mistral
+        # Standard Text / Pollinations
         system_prompt = tool_config.get("system_prompt", "")
         response_text = await execute_mistral_request(user_id, final_prompt, system_prompt)
         response_payload["response"] = response_text
 
-    # 4. Database Persistence (1 Chat = 1 Object Logic)
+    # 4. Database Persistence
     if chat_id and ObjectId.is_valid(chat_id):
         chats.update_one(
             {"_id": ObjectId(chat_id)},
@@ -240,12 +230,11 @@ async def master_ai_handler(
         )
         final_chat_id = chat_id
     else:
-        # Create New Chat Object
         new_chat = {
             "user_id": user_id,
             "title": prompt[:30] + "...",
             "created_at": datetime.now(timezone.utc),
-            "vfs_state": {}, # Virtual File System Root
+            "vfs_state": {},
             "messages": [response_payload]
         }
         res = chats.insert_one(new_chat)
@@ -264,12 +253,12 @@ async def generate_image_handler(
     chat_id: Optional[str] = Form(None)
 ):
     """
-    Generates image via Flux, downloads it, stores Base64 in DB, returns to User.
+    Generates image via Flux.
     """
     chats = get_db_collection("chat_history")
     user_id = str(current_user["_id"])
     
-    # 1. Enhance Prompt via Mistral (now Pollinations)
+    # 1. Enhance Prompt via Pollinations (reusing the function)
     enhancer_prompt = f"Refine this prompt for an AI image generator (Flux) to be photorealistic: {prompt}"
     enhanced_prompt = await execute_mistral_request(user_id, enhancer_prompt, "You are a prompt engineer.")
     
@@ -277,14 +266,13 @@ async def generate_image_handler(
     timestamp = str(int(time.time()))
     flux_url = f"https://flux-schnell.hello-kaiiddo.workers.dev/img?prompt={urllib.parse.quote(enhanced_prompt)}&t={timestamp}"
     
-    # 3. Download & Convert to Base64 (The "Temporary DB Store" Logic)
+    # 3. Download & Convert to Base64
     try:
         async with httpx.AsyncClient() as client:
             img_resp = await client.get(flux_url, timeout=90.0)
             img_resp.raise_for_status()
             image_bytes = img_resp.content
             
-            # Convert to Base64 for storage
             b64_string = base64.b64encode(image_bytes).decode('utf-8')
             data_uri = f"data:image/jpeg;base64,{b64_string}"
             
@@ -298,7 +286,7 @@ async def generate_image_handler(
         "tool": "flux_image",
         "input": prompt,
         "enhanced_prompt": enhanced_prompt,
-        "image_data": data_uri, # Stored directly in DB
+        "image_data": data_uri, 
         "timestamp": datetime.now(timezone.utc)
     }
 
@@ -313,15 +301,12 @@ async def generate_image_handler(
         })
         final_chat_id = str(res.inserted_id)
 
-    # 5. Generate Proxy Link (Not exposing DB, but serving the content)
     return {
         "status": "success",
         "chat_id": final_chat_id,
-        "image_url": data_uri, # Immediate display
+        "image_url": data_uri, 
         "download_filename": f"gen_{timestamp}.jpg"
     }
-
-# === MANAGEMENT ENDPOINTS (Frontend Dynamic Control) ===
 
 @router.post("/tools/add")
 async def add_new_tool(
@@ -331,20 +316,15 @@ async def add_new_tool(
     tool_type: ToolType,
     current_user: Dict = Depends(auth_utils.get_current_user)
 ):
-    """
-    Allows Frontend to register new AI Tools/MVPs dynamically.
-    """
     tools = get_db_collection("ai_tools")
-    
     new_tool = {
         "name": name,
-        "slug": slug, # e.g., 'react_coder', 'legal_advisor'
+        "slug": slug,
         "system_prompt": system_prompt,
         "type": tool_type,
         "created_by": current_user["_id"],
         "created_at": datetime.now(timezone.utc)
     }
-    
     tools.update_one({"slug": slug}, {"$set": new_tool}, upsert=True)
     return {"status": "Tool registered", "slug": slug}
 
@@ -353,23 +333,15 @@ async def create_share_link(
     chat_id: str,
     current_user: Dict = Depends(auth_utils.get_current_user)
 ):
-    """
-    Generates a public share link for a specific chat.
-    """
     chats = get_db_collection("chat_history")
     chat = chats.find_one({"_id": ObjectId(chat_id), "user_id": str(current_user["_id"])})
-    
     if not chat:
         raise HTTPException(404, "Chat not found")
-        
-    # Generate a secure, non-guessable share ID
     share_token = secrets.token_urlsafe(16)
-    
     chats.update_one(
         {"_id": ObjectId(chat_id)},
         {"$set": {"share_token": share_token, "is_public": True}}
     )
-    
     return {
         "share_url": f"{FRONTEND_URL}/share/{share_token}",
         "api_access_url": f"{BACKEND_URL}/ai/shared/{share_token}"
@@ -377,18 +349,30 @@ async def create_share_link(
 
 @router.post("/api-key/generate")
 async def generate_api_key(current_user: Dict = Depends(auth_utils.get_current_user)):
-    """Generates a unique SDK API key for the user."""
     users = get_db_collection("users")
     api_key = f"sk_{secrets.token_hex(24)}"
-    
     users.update_one(
         {"_id": current_user["_id"]},
         {"$set": {"sdk_api_key": api_key}}
     )
     return {"api_key": api_key}
 
-# === LEGACY / COMPATIBILITY ===
-# Provides backward compatibility for older frontend calls if any
 @router.get("/health")
 async def health_check():
-    return {"status": "legacy_mode_on", "engine": "Pollinations+Flux"}
+    """
+    Health Check with Microseconds Latency.
+    """
+    start_time = time.time()
+    
+    # Minimal DB check (optional)
+    status_db = "connected" if db is not None else "disconnected"
+    
+    end_time = time.time()
+    latency_us = int((end_time - start_time) * 1_000_000) # Convert to Microseconds
+    
+    return {
+        "status": "online", 
+        "engine": "Pollinations+Flux",
+        "database": status_db,
+        "latency_us": latency_us
+    }
