@@ -11,7 +11,6 @@ import re
 from typing import Dict, List, Optional, Any, Union
 from enum import Enum
 from datetime import datetime, timezone
-from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
@@ -24,7 +23,7 @@ try:
 except ImportError:
     pypdf = None
 
-# Image Handling (Fixes 503 errors on image upload)
+# Free Vision Placeholder (PIL)
 try:
     from PIL import Image
 except ImportError:
@@ -45,47 +44,26 @@ logger.setLevel(logging.INFO)
 
 router = APIRouter(prefix="/ai", tags=["AI Core Legacy"])
 
-# === CONSTANTS ===
-FRONTEND_URL = "https://yuku-nine.vercel.app"
-BACKEND_URL = "https://giant-noell-pixelart002-1c1d1fda.koyeb.app"
-
-# === DATA MODELS ===
-class ToolType(str, Enum):
-    TEXT = "text"
-    IMAGE = "image"
-    EDITOR = "editor"
-    REVIEW = "review"
-
-# === SYSTEM PROMPTS (VFS ENGINE) ===
+# === SYSTEM PROMPTS & INSTRUCTIONS ===
 VFS_SYSTEM_PROMPT = """
-You are YUKU, an advanced AI IDE Engine.
-You have direct control over a Virtual File System (VFS).
+You are YUKU, an advanced AI Coding Engine with direct control over a Virtual File System (VFS).
 
 INSTRUCTIONS:
-1. You are interacting with a user. Use their name if provided.
-2. If the user asks for code/websites, you MUST return a JSON object wrapped in ```json ... ``` tags.
-3. Structure your response exactly like this:
-
+1. If the user asks for code/websites, DO NOT just print code. You MUST return a JSON object.
+2. Structure:
 ```json
 {
-  "message": "I have created the landing page as requested.",
+  "message": "I have created the portfolio page.",
   "operations": [
-    {
-      "action": "create",
-      "path": "index.html",
-      "content": "<!DOCTYPE html>..."
-    },
-    {
-      "action": "update",
-      "path": "style.css",
-      "content": "body { background: #050a08; color: #10b981; }"
-    }
-  ]
+    { "action": "create", "path": "index.html", "content": "..." },
+    { "action": "update", "path": "style.css", "content": "..." }
+  ],
+  "open_ide": true
 }
 ```
-
-Valid actions: "create", "update", "delete".
-Always include 'index.html' if building a web view.
+3. Valid actions: "create", "update", "delete".
+4. If the user asks for an image, return: { "command": "generate_image", "prompt": "..." }
+5. If you need an external API key, return: { "ui_request": "api_key_input", "service": "openai" }
 """
 
 # === HELPER FUNCTIONS ===
@@ -97,8 +75,7 @@ def get_db_collection(name: str):
 
 async def parse_uploaded_file(file: UploadFile) -> str:
     """
-    Parses context from files. 
-    Fixes 503 Error by handling images safely without crashing.
+    Parses context from files. Handles Images safely to prevent 503 errors.
     """
     content_str = ""
     filename = file.filename.lower()
@@ -112,7 +89,7 @@ async def parse_uploaded_file(file: UploadFile) -> str:
                 reader = pypdf.PdfReader(io.BytesIO(file_bytes))
                 for page in reader.pages:
                     content_str += page.extract_text() + "\n"
-            except Exception:
+            except:
                 content_str += "[PDF Content Unreadable]\n"
 
         # 2. Zip Parsing
@@ -125,15 +102,14 @@ async def parse_uploaded_file(file: UploadFile) -> str:
                                 content_str += f"\n--- FILE: {zname} ---\n{zf.read().decode('utf-8', errors='ignore')}"
                             except: pass
 
-        # 3. Image Handling (Fixes 503)
-        # Since we are using free tier without API keys, we extract metadata.
-        elif filename.endswith(('.png', '.jpg', '.jpeg', '.webp')):
+        # 3. Image Handling (Safe Mode)
+        elif filename.endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif')):
             if Image:
                 try:
                     img = Image.open(io.BytesIO(file_bytes))
-                    content_str += f"\n[IMAGE CONTEXT: {filename} | Resolution: {img.size} | Format: {img.format}]\n(Note: Visual pixel analysis is limited. Use filename as context.)"
-                except Exception:
-                    content_str += f"\n[IMAGE UPLOADED: {filename} - Metadata unreadable]"
+                    content_str += f"\n[IMAGE CONTEXT: {filename} | Size: {img.size} | Format: {img.format}]\n(Visual analysis limited in Legacy Mode)"
+                except:
+                    content_str += f"\n[IMAGE UPLOADED: {filename}]"
             else:
                 content_str += f"\n[IMAGE UPLOADED: {filename}]"
 
@@ -151,39 +127,35 @@ async def execute_pollinations_request(prompt: str, system_prompt: str) -> str:
     """
     Uses Pollinations.ai (OpenAI Model) - Free & Unlimited.
     """
-    # Pollinations takes prompt in URL, so we structure the conversation
-    full_query = f"{system_prompt}\n\nUSER REQUEST: {prompt}\n\nASSISTANT RESPONSE (JSON if coding):"
+    full_query = f"{system_prompt}\n\nUSER REQUEST: {prompt}\n\nASSISTANT RESPONSE (JSON if coding/tool):"
     
     encoded_prompt = urllib.parse.quote(full_query)
-    # Random seed for variation
     seed = secrets.randbelow(99999)
     url = f"https://text.pollinations.ai/{encoded_prompt}?model=openai&seed={seed}"
 
     async with httpx.AsyncClient(timeout=100.0) as client:
         try:
-            # Pollinations returns raw text
             resp = await client.get(url)
             resp.raise_for_status()
             return resp.text.strip()
         except Exception as e:
             logger.error(f"Pollinations API Error: {e}")
-            # Fallback JSON to prevent frontend crash
             return json.dumps({
                 "message": "Error connecting to AI Engine. Please try again.",
                 "operations": []
             })
 
-def process_vfs_logic(ai_response: str, current_vfs: Dict) -> tuple[str, Dict]:
+def process_vfs_logic(ai_response: str, current_vfs: Dict) -> tuple[str, Dict, bool]:
     """
     Detects JSON in AI response and updates the Virtual File System.
+    Returns: (Clean Message, Updated VFS, Should Open IDE)
     """
     updated_vfs = current_vfs.copy()
     clean_message = ai_response
+    should_open_ide = False
 
-    # Regex to find JSON block inside ```json ... ```
+    # Find JSON block
     json_match = re.search(r'```json\s*(\{.*?\})\s*```', ai_response, re.DOTALL)
-    
-    # Fallback: Find raw JSON object if code blocks missing
     if not json_match:
         json_match = re.search(r'(\{.*"operations":.*\})', ai_response, re.DOTALL)
 
@@ -194,6 +166,8 @@ def process_vfs_logic(ai_response: str, current_vfs: Dict) -> tuple[str, Dict]:
             
             operations = data.get("operations", [])
             clean_message = data.get("message", "VFS updated successfully.")
+            if data.get("open_ide"):
+                should_open_ide = True
 
             for op in operations:
                 action = op.get("action")
@@ -205,10 +179,14 @@ def process_vfs_logic(ai_response: str, current_vfs: Dict) -> tuple[str, Dict]:
                 elif action == "delete" and path in updated_vfs:
                     del updated_vfs[path]
                     
+            # If it's a tool command (like generate_image), return raw JSON for frontend
+            if "command" in data or "ui_request" in data:
+                return json.dumps(data), updated_vfs, False
+                
         except json.JSONDecodeError:
-            pass # Return original text if JSON is broken
+            pass 
 
-    return clean_message, updated_vfs
+    return clean_message, updated_vfs, should_open_ide
 
 # === ENDPOINTS ===
 
@@ -221,51 +199,43 @@ async def master_ai_handler(
     current_user: Dict = Depends(auth_utils.get_current_user)
 ):
     """
-    Master Endpoint: Handles Chat, Image Context, and Code Editing (VFS).
+    Master Endpoint: Text, Code (VFS), Image Context, Tool Calling.
     """
     chats = get_db_collection("chat_history")
     tools = get_db_collection("ai_tools")
     user_id = str(current_user["_id"])
-    user_fullname = current_user.get("fullname", "User")
 
-    # 1. Parse File Context
+    # 1. Context Building (User Info + Files)
+    user_context = f"User Profile: {current_user.get('fullname')} (@{current_user.get('username')})\n"
     file_context = ""
     if files:
         for file in files:
             file_context += await parse_uploaded_file(file)
 
-    full_prompt = f"{file_context}\n\n{prompt}"
+    full_prompt = f"{user_context}\n{file_context}\n\nUser Query: {prompt}"
 
-    # 2. Load Chat & VFS State
+    # 2. Load State
     vfs_state = {}
     if chat_id and ObjectId.is_valid(chat_id):
         chat = chats.find_one({"_id": ObjectId(chat_id)})
         if chat:
             vfs_state = chat.get("vfs_state", {})
 
-    # 3. Select System Prompt & Inject User Context
-    user_context = f"User Name: {user_fullname} (ID: {user_id})"
-    
+    # 3. System Prompt Selection
     if tool_id == "code_editor":
-        # Inject current file list so AI knows what exists
         file_list = list(vfs_state.keys())
-        system_prompt = f"{VFS_SYSTEM_PROMPT}\nContext: {user_context}\nEXISTING FILES: {json.dumps(file_list)}"
-        
-        # Inject content if user asks to "read" or "fix"
+        system_prompt = f"{VFS_SYSTEM_PROMPT}\n\nEXISTING FILES: {json.dumps(file_list)}"
         if "read" in prompt.lower() or "fix" in prompt.lower():
-            system_prompt += f"\n\nFILE CONTENT CONTEXT: {json.dumps(vfs_state)}"
-            
+            system_prompt += f"\n\nFILE CONTENT: {json.dumps(vfs_state)}"
     else:
-        # Dynamic Tools
         tool_db = tools.find_one({"slug": tool_id})
-        system_prompt = tool_db["system_prompt"] if tool_db else "You are a helpful AI assistant."
-        system_prompt += f"\nContext: {user_context}"
+        system_prompt = tool_db["system_prompt"] if tool_db else "You are YUKU, a helpful AI assistant. If the user wants an image, reply with JSON command: {\"command\": \"generate_image\", \"prompt\": \"...\"}"
 
-    # 4. Execute AI (Pollinations)
+    # 4. Execute AI
     raw_response = await execute_pollinations_request(full_prompt, system_prompt)
 
-    # 5. Process VFS
-    final_response, vfs_state = process_vfs_logic(raw_response, vfs_state)
+    # 5. Process VFS & Logic
+    final_response, vfs_state, open_ide_signal = process_vfs_logic(raw_response, vfs_state)
 
     # 6. Persistence
     msg_payload = {
@@ -300,7 +270,8 @@ async def master_ai_handler(
         "status": "success",
         "chat_id": final_chat_id,
         "data": msg_payload,
-        "vfs": vfs_state # Returns updated file tree to frontend
+        "vfs": vfs_state,
+        "open_ide": open_ide_signal
     }
 
 @router.post("/generate-image")
@@ -310,20 +281,19 @@ async def generate_image_handler(
     chat_id: Optional[str] = Form(None)
 ):
     """
-    Uses Flux Schnell via Worker.
+    Flux Schnell Image Generation.
     """
     chats = get_db_collection("chat_history")
     user_id = str(current_user["_id"])
 
-    # 1. Enhance Prompt
+    # Enhance
     enhanced_prompt = await execute_pollinations_request(
-        f"Enhance this image prompt for Flux (Photorealistic): {prompt}", 
-        "You are a prompt engineer."
+        f"Enhance this image prompt for Flux (Photorealistic, 8k): {prompt}", 
+        "You are an expert prompt engineer."
     )
 
-    # 2. Generate
+    # Generate
     ts = str(int(time.time()))
-    # Manual quoting to ensure safety
     safe_prompt = urllib.parse.quote(enhanced_prompt)
     url = f"https://flux-schnell.hello-kaiiddo.workers.dev/img?prompt={safe_prompt}&t={ts}"
 
@@ -331,14 +301,13 @@ async def generate_image_handler(
         async with httpx.AsyncClient() as client:
             resp = await client.get(url, timeout=90.0)
             resp.raise_for_status()
-            # Convert to Base64 for permanent storage
             b64 = base64.b64encode(resp.content).decode('utf-8')
             data_uri = f"data:image/jpeg;base64,{b64}"
     except Exception as e:
         logger.error(f"Flux Error: {e}")
         raise HTTPException(503, "Image service unavailable.")
 
-    # 3. Save
+    # Save
     payload = {
         "user_id": user_id,
         "tool": "flux_image",
@@ -363,72 +332,65 @@ async def generate_image_handler(
         "download_filename": f"yuku_flux_{ts}.jpg"
     }
 
-@router.get("/health")
-async def health_check():
-    """
-    Health check with Microsecond Latency.
-    """
-    start_time = time.perf_counter()
-    
-    db_status = "unknown"
-    try:
-        # Simple Ping
-        db.command("ping")
-        db_status = "connected"
-    except Exception:
-        db_status = "disconnected"
-
-    end_time = time.perf_counter()
-    latency_us = (end_time - start_time) * 1_000_000 # Convert to microseconds
-
-    return {
-        "status": "legacy_mode_active",
-        "engine": "Pollinations (OpenAI)",
-        "db_connection": db_status,
-        "latency_microseconds": int(latency_us)
-    }
-
-# === TOOL MANAGEMENT ===
-@router.post("/tools/add")
-async def add_tool(name: str, slug: str, system_prompt: str, tool_type: str):
-    # Simple upsert for dynamic tools
-    get_db_collection("ai_tools").update_one(
-        {"slug": slug},
-        {"$set": {"name": name, "slug": slug, "system_prompt": system_prompt, "type": tool_type}},
-        upsert=True
-    )
-    return {"status": "ok", "tool": slug}
+# === RESTORED ENDPOINTS ===
 
 @router.post("/share/{chat_id}")
-async def create_share_link(
-    chat_id: str,
-    current_user: Dict = Depends(auth_utils.get_current_user)
-):
+async def create_share_link(chat_id: str, current_user: Dict = Depends(auth_utils.get_current_user)):
     chats = get_db_collection("chat_history")
     chat = chats.find_one({"_id": ObjectId(chat_id), "user_id": str(current_user["_id"])})
-    
     if not chat:
         raise HTTPException(404, "Chat not found")
-        
-    share_token = secrets.token_urlsafe(16)
     
-    chats.update_one(
-        {"_id": ObjectId(chat_id)},
-        {"$set": {"share_token": share_token, "is_public": True}}
-    )
+    share_token = secrets.token_urlsafe(16)
+    chats.update_one({"_id": ObjectId(chat_id)}, {"$set": {"share_token": share_token, "is_public": True}})
     
     return {
-        "share_url": f"{FRONTEND_URL}/share/{share_token}",
-        "api_access_url": f"{BACKEND_URL}/ai/shared/{share_token}"
+        "share_url": f"https://yuku-nine.vercel.app/share/{share_token}",
+        "api_access_url": f"https://giant-noell-pixelart002-1c1d1fda.koyeb.app/ai/shared/{share_token}"
     }
 
 @router.post("/api-key/generate")
 async def generate_api_key(current_user: Dict = Depends(auth_utils.get_current_user)):
     users = get_db_collection("users")
     api_key = f"sk_{secrets.token_hex(24)}"
-    
-    users.update_one(
-        {"_id": current_user["_id"]},
-        {"$set": {"sdk_api_key": api_key}}
-    )
+    users.update_one({"_id": current_user["_id"]}, {"$set": {"sdk_api_key": api_key}})
     return {"api_key": api_key}
+
+@router.post("/tools/add")
+async def add_new_tool(name: str, slug: str, system_prompt: str, tool_type: str, current_user: Dict = Depends(auth_utils.get_current_user)):
+    get_db_collection("ai_tools").update_one(
+        {"slug": slug},
+        {"$set": {"name": name, "slug": slug, "system_prompt": system_prompt, "type": tool_type}},
+        upsert=True
+    )
+    return {"status": "Tool registered", "slug": slug}
+
+@router.get("/chats")
+async def get_user_chats(current_user: Dict = Depends(auth_utils.get_current_user)):
+    """Fetch chat history for drawer."""
+    chats = get_db_collection("chat_history")
+    cursor = chats.find({"user_id": str(current_user["_id"])}).sort("last_updated", -1).limit(20)
+    results = []
+    for c in cursor:
+        results.append({
+            "id": str(c["_id"]),
+            "title": c.get("title", "New Chat"),
+            "date": c.get("last_updated", c.get("created_at"))
+        })
+    return results
+
+@router.delete("/chats/{chat_id}")
+async def delete_chat(chat_id: str, current_user: Dict = Depends(auth_utils.get_current_user)):
+    res = get_db_collection("chat_history").delete_one({"_id": ObjectId(chat_id), "user_id": str(current_user["_id"])})
+    return {"deleted": res.deleted_count > 0}
+
+@router.get("/health")
+async def health_check():
+    start = time.perf_counter()
+    try:
+        db.command("ping")
+        status_db = "connected"
+    except:
+        status_db = "disconnected"
+    latency = (time.perf_counter() - start) * 1_000_000
+    return {"status": "legacy_mode_on", "latency_us": int(latency), "db": status_db}
