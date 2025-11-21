@@ -14,7 +14,8 @@ from datetime import datetime, timezone
 # --- LIBRARIES ---
 from PIL import Image
 import httpx
-from duckduckgo_search import AsyncDDGS
+# [FIX] Switched to DDGS (Stable) to fix ImportError: cannot import name 'AsyncDDGS'
+from duckduckgo_search import DDGS 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Body
 from fastapi.responses import StreamingResponse, HTMLResponse
 from pydantic import BaseModel
@@ -83,15 +84,23 @@ async def parse_files(file: UploadFile) -> str:
     except: return f"[Error reading {fname}]"
     return f"\n=== FILE: {fname} ===\n{content}\n"
 
+# [FIXED] Using Synchronous DDGS which is compatible with all versions
 async def web_search(query: str) -> str:
     try:
-        async with AsyncDDGS() as ddgs:
-            results = await ddgs.text(query, max_results=3)
+        # Use context manager to handle session correctly
+        with DDGS() as ddgs:
+            # .text() returns a generator/list, we convert to list to check content
+            results = list(ddgs.text(query, max_results=3))
             if not results: return ""
+            
             summary = "\n[WEB DATA]:\n"
-            for r in results: summary += f"- {r['title']}: {r['body']}\n"
+            for r in results: 
+                summary += f"- {r['title']}: {r['body']}\n"
             return summary
-    except: return ""
+    except Exception as e:
+        # Log error but don't crash
+        print(f"Search Error: {e}") 
+        return ""
 
 async def call_ai(prompt: str, system: str) -> str:
     full = f"{system}\n\nUSER: {prompt}\n\nASSISTANT:"
