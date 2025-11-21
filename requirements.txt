@@ -14,6 +14,7 @@ httpx
 python-multipart
 qrcode[pil]==7.4.2
 pypdf
+duckduckgo-search
 
 
 
