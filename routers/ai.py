@@ -13,12 +13,14 @@ from datetime import datetime, timezone
 # --- LIBRARIES ---
 from PIL import Image
 import httpx
-# Use DDGS (Stable)
+# Use DDGS (Stable Synchronous)
 from duckduckgo_search import DDGS 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, HTMLResponse
 from pydantic import BaseModel
 from bson import ObjectId
+# Fix for NameError: Optional
+from typing import Dict, List, Optional, Any
 
 # --- OPTIONAL IMPORTS ---
 try: import pypdf
@@ -36,31 +38,33 @@ router = APIRouter(prefix="/ai", tags=["AI Core Legacy"])
 BACKEND_URL = "https://giant-noell-pixelart002-1c1d1fda.koyeb.app"
 PISTON_API = "https://emkc.org/api/v2/piston/execute"
 
-# --- SYSTEM PROMPT (STRICT V0 MODE) ---
+# --- SYSTEM PROMPT (STRICT SANITIZATION MODE) ---
 VFS_PROMPT = """
-You are YUKU, an Expert AI Full-Stack Architect (v0 style).
+You are YUKU, an Expert AI Full-Stack Architect.
 You operate a Virtual File System (VFS).
 
 CRITICAL RULES FOR FILE CONTENT:
-1. **index.html**: Must contain ONLY valid HTML5 code. Link CSS/JS using relative paths.
-   - Correct: <link rel="stylesheet" href="style.css">
-   - Correct: <script src="script.js"></script>
+1. **index.html**: Must contain ONLY valid HTML5 code. 
+   - Link CSS: <link rel="stylesheet" href="style.css">
+   - Link JS: <script src="script.js"></script>
+   
 2. **style.css**: Must contain ONLY raw CSS rules. 
-   - PROHIBITED: <style> tags, HTML tags, JavaScript.
+   - PROHIBITED: Do NOT use <style> tags. Do NOT write HTML.
+   
 3. **script.js**: Must contain ONLY raw JavaScript. 
-   - PROHIBITED: <script> tags, HTML tags, CSS.
+   - PROHIBITED: Do NOT use <script> tags. Do NOT write HTML.
+
 4. **JSON Output**: Return a valid JSON object wrapped in ```json ... ``` blocks.
 
 FORMAT:
 {
-  "message": "Creating portfolio...",
+  "message": "Creating project...",
   "operations": [
-    { "action": "create", "path": "index.html", "content": "<!DOCTYPE html><html>...</html>" },
+    { "action": "create", "path": "index.html", "content": "<!DOCTYPE html>..." },
     { "action": "create", "path": "style.css", "content": "body { background: #000; }" },
     { "action": "create", "path": "script.js", "content": "console.log('Ready');" }
   ]
 }
-5. ENTRY POINT: You MUST create 'index.html'.
 """
 
 # --- MODELS ---
@@ -77,7 +81,8 @@ class CodeRunRequest(BaseModel):
     language: str
     code: str
 
-# --- HELPERS ---
+# --- HELPER FUNCTIONS ---
+
 def get_collection(name: str):
     if db is None: raise HTTPException(500, "DB Disconnected")
     return db[name]
@@ -92,12 +97,12 @@ async def parse_files(file: UploadFile) -> str:
             for p in r.pages: content += p.extract_text() + "\n"
         elif fname.endswith(('.png', '.jpg', '.webp')):
             img = Image.open(io.BytesIO(data))
-            content += f"\n[IMAGE: {fname} | {img.size}]\n"
+            content += f"\n[IMAGE METADATA: {fname} | Size: {img.size}]\n"
         else: content = data.decode('utf-8', errors='ignore')
     except: return f"[Error reading {fname}]"
     return f"\n=== FILE: {fname} ===\n{content}\n"
 
-# Synchronous Search (Stable)
+# Synchronous Search (Stable Fix)
 def perform_web_search(query: str) -> str:
     try:
         with DDGS() as ddgs:
@@ -119,35 +124,28 @@ async def call_pollinations(prompt: str, system: str) -> str:
             return r.text.strip()
         except: return json.dumps({"message": "AI Error", "operations": []})
 
+# [NEW] Sanitizer to Fix Mixed Code Issues
 def sanitize_content(path: str, content: str) -> str:
     """
-    Strictly cleans file content based on extension to prevent mixed code.
+    Removes Markdown wrappers, <style> tags from CSS, and <script> tags from JS.
     """
     path = path.lower()
     
-    # 1. Clean Markdown Wrappers
+    # Remove Markdown code blocks
     content = re.sub(r'^```\w*\n', '', content)
     content = re.sub(r'\n```$', '', content)
     
-    # 2. CSS Sanitization
+    # Clean CSS
     if path.endswith('.css'):
-        # Remove <style> tags and anything that looks like HTML
         content = re.sub(r'<style[^>]*>', '', content, flags=re.I)
         content = re.sub(r'</style>', '', content, flags=re.I)
-        # Remove script tags if any
-        content = re.sub(r'<script.*?>.*?</script>', '', content, flags=re.I|re.S)
-        # Ensure no HTML doctype
-        if "<!DOCTYPE" in content or "<html" in content:
-            # Aggressive Fallback: Extract only content inside {}
-            pass 
-
-    # 3. JS Sanitization
-    elif path.endswith('.js') or path.endswith('.ts') or path.endswith('.jsx'):
-        # Remove <script> tags
+        # Prevent HTML injection in CSS
+        content = re.sub(r'<[^>]+>', '', content) 
+    
+    # Clean JS
+    elif path.endswith('.js') or path.endswith('.jsx'):
         content = re.sub(r'<script[^>]*>', '', content, flags=re.I)
         content = re.sub(r'</script>', '', content, flags=re.I)
-        # Remove CSS style blocks
-        content = re.sub(r'<style.*?>.*?</style>', '', content, flags=re.I|re.S)
 
     return content.strip()
 
@@ -162,8 +160,7 @@ def process_vfs(text: str, vfs: dict) -> tuple[str, dict, bool]:
     if match:
         try:
             json_str = match.group(1)
-            # Clean bad escapes
-            json_str = json_str.replace('\\n', '\\\\n')
+            json_str = json_str.replace('\\n', '\\\\n') # Fix JSON escape issue
             
             data = json.loads(json_str)
             msg = data.get("message", "Code updated.")
@@ -172,7 +169,7 @@ def process_vfs(text: str, vfs: dict) -> tuple[str, dict, bool]:
                 path = op['path'].strip('/')
                 raw_content = op['content']
                 
-                # APPLY STRICT SANITIZATION
+                # Apply Strict Sanitization
                 clean_content = sanitize_content(path, raw_content)
                 
                 updated = True
@@ -181,21 +178,26 @@ def process_vfs(text: str, vfs: dict) -> tuple[str, dict, bool]:
                 elif op['action'] == 'delete' and path in new_vfs: 
                     del new_vfs[path]
         except Exception as e:
-            logger.error(f"VFS Parse Error: {e}")
+            logger.error(f"VFS Error: {e}")
             
     return msg, new_vfs, updated
 
 def inject_assets(html: str, vfs: dict) -> str:
-    # Smart Linking: Inject CSS/JS into HTML
+    # Inject CSS/JS for Preview
     if not html: return "<h1>Error: Empty HTML</h1>"
     
     for path, code in vfs.items():
         name = path.split('/')[-1]
+        
         if path.endswith('.css'):
-            html = re.sub(f'<link[^>]*href=["\'].*?{re.escape(name)}["\'][^>]*>', f'<style>/*{path}*/\n{code}</style>', html, flags=re.I)
+            pattern = re.compile(f'<link[^>]*href=["\'].*?{re.escape(name)}["\'][^>]*>', re.IGNORECASE)
+            if pattern.search(html):
+                html = pattern.sub(f'<style>/* {path} */\n{code}</style>', html)
+        
         if path.endswith('.js'):
-            # Remove src and inject content
-            html = re.sub(f'<script[^>]*src=["\'].*?{re.escape(name)}["\'][^>]*>.*?</script>', f'<script>/*{path}*/\n{code}</script>', html, flags=re.I|re.S)
+            pattern = re.compile(f'<script[^>]*src=["\'].*?{re.escape(name)}["\'][^>]*>.*?</script>', re.IGNORECASE | re.DOTALL)
+            if pattern.search(html):
+                html = pattern.sub(f'<script>/* {path} */\n{code}</script>', html)
             
     return html
 
@@ -251,7 +253,7 @@ async def ask_ai(
 
 # --- IMAGE GEN ---
 @router.post("/generate-image")
-async def generate_image(prompt: str = Form(...), current_user: Dict = Depends(auth_utils.get_current_user), chat_id: str = Form(None)):
+async def generate_image(prompt: str = Form(...), current_user: Dict = Depends(auth_utils.get_current_user), chat_id: Optional[str] = Form(None)):
     enhanced = await call_pollinations(f"Enhance: {prompt}", "Prompt Engineer")
     url = f"https://flux-schnell.hello-kaiiddo.workers.dev/img?prompt={urllib.parse.quote(enhanced)}&t={int(time.time())}"
     try:
@@ -279,7 +281,7 @@ async def view(did: str):
     d = get_collection("deployments").find_one({"did": did})
     if not d: return HTMLResponse("404", 404)
     vfs = d["vfs"]
-    html = vfs.get("index.html", "<h1 style='color:white'>No Index Found</h1>")
+    html = vfs.get("index.html", "<h1>No Index Found</h1>")
     return HTMLResponse(inject_assets(html, vfs))
 
 @router.get("/live/{chat_id}")
