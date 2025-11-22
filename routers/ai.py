@@ -40,7 +40,6 @@ PISTON_API = "https://emkc.org/api/v2/piston/execute"
 def read_config_file(path: str, default_value: str) -> str:
     """Dynamically reads prompt files from the config folder."""
     try:
-        # Removes leading slash if present to avoid path issues
         clean_path = path.lstrip("/") 
         if os.path.exists(clean_path):
             with open(clean_path, "r", encoding="utf-8") as f:
@@ -51,7 +50,6 @@ def read_config_file(path: str, default_value: str) -> str:
     return default_value
 
 # --- SINGLE GOD MODE PROMPT (DYNAMIC LOAD) ---
-# Default fallback provided in case file is missing, but tries to read file first
 DEFAULT_GOD_PROMPT = """You are YUKU, the Ultimate AI Developer."""
 GOD_MODE_PROMPT = read_config_file("config/prompt.txt", DEFAULT_GOD_PROMPT)
 
@@ -151,13 +149,26 @@ def process_vfs(text: str, vfs: dict) -> tuple[str, dict, bool]:
     return msg, new_vfs, updated
 
 def inject_assets(html: str, vfs: dict) -> str:
+    """
+    Injects CSS and JS into the HTML using lambda to avoid regex escape errors.
+    """
     if not html: return "<h1>Error: Empty HTML</h1>"
+    
     for path, code in vfs.items():
         name = path.split('/')[-1]
+        
+        # Safe replacement for CSS
         if path.endswith('.css'):
-            html = re.sub(f'<link[^>]*href=["\'].*?{re.escape(name)}["\'][^>]*>', f'<style>/*{path}*/\n{code}</style>', html, flags=re.I)
+            pattern = f'<link[^>]*href=["\'].*?{re.escape(name)}["\'][^>]*>'
+            # We use a lambda function for replacement to prevent 'bad escape' errors 
+            # when the 'code' variable contains backslashes (e.g., \n, \s, etc.)
+            html = re.sub(pattern, lambda m: f'<style>/*{path}*/\n{code}</style>', html, flags=re.I)
+            
+        # Safe replacement for JS
         if path.endswith('.js'):
-            html = re.sub(f'<script[^>]*src=["\'].*?{re.escape(name)}["\'][^>]*>.*?</script>', f'<script>/*{path}*/\n{code}</script>', html, flags=re.I|re.S)
+            pattern = f'<script[^>]*src=["\'].*?{re.escape(name)}["\'][^>]*>.*?</script>'
+            html = re.sub(pattern, lambda m: f'<script>/*{path}*/\n{code}</script>', html, flags=re.I|re.S)
+            
     return html
 
 # --- MASTER ENDPOINT ---
@@ -187,7 +198,7 @@ async def ask_ai(
             vfs = c.get("vfs_state", {})
             memory = c.get("memory", "")
 
-    # RELOAD PROMPT PER REQUEST (Optional: ensures live updates without restart)
+    # RELOAD PROMPT PER REQUEST
     current_sys_prompt = read_config_file("config/prompt.txt", GOD_MODE_PROMPT)
 
     sys_prompt = f"{current_sys_prompt}\nMEMORY: {memory}"
@@ -212,7 +223,6 @@ async def ask_ai(
 # --- IMAGE GEN ---
 @router.post("/generate-image")
 async def generate_image(prompt: str = Form(...), current_user: Dict = Depends(auth_utils.get_current_user), chat_id: Optional[str] = Form(None)):
-    # Dynamically read the Flux Enhancement Prompt from file
     flux_system = read_config_file("config/flux_enhance.txt", "Prompt Engineer")
     
     enhanced = await call_pollinations(f"Enhance for image: {prompt}", flux_system)
@@ -251,15 +261,26 @@ async def live(chat_id: str):
     if not c: return HTMLResponse("404", 404)
     vfs = c.get("vfs_state", {})
     html = vfs.get("index.html", "<h1>Building...</h1>")
+    
+    # Basic Console Hijack for Parent Window Logging
     js = """<script>
     (function(){
         const s=window.parent.postMessage.bind(window.parent);
         console.log=(...a)=>s({type:'log',args:a},'*');
         console.error=(...a)=>s({type:'error',args:a},'*');
     })();</script>"""
+    
     if "<head>" in html: html = html.replace("<head>", f"<head>{js}")
     else: html = js + html
-    return HTMLResponse(inject_assets(html, vfs))
+    
+    # Call the fixed inject_assets function
+    try:
+        final_html = inject_assets(html, vfs)
+    except Exception as e:
+        logger.error(f"Injection Error: {e}")
+        final_html = html # Fallback to raw HTML if injection fails drastically
+
+    return HTMLResponse(final_html)
 
 # --- MEMORY & UTILS ---
 @router.get("/chat/{chat_id}/memory")
