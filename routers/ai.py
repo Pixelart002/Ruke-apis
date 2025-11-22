@@ -10,10 +10,12 @@ import zipfile
 import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
+from pathlib import Path
 
 # --- LIBRARIES ---
 from PIL import Image
 import httpx
+# Using Synchronous DDGS for stability
 from duckduckgo_search import DDGS 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, HTMLResponse
@@ -27,31 +29,41 @@ except: pypdf = None
 from auth import utils as auth_utils 
 from database import db
 
-# --- CONFIG ---
+# --- CONFIGURATION ---
 logger = logging.getLogger("AI_CORE_LEGACY")
 logger.setLevel(logging.INFO)
 router = APIRouter(prefix="/ai", tags=["AI Core Legacy"])
 
-# --- CONSTANTS ---
+# --- CONSTANTS & PATHS ---
 BACKEND_URL = "https://giant-noell-pixelart002-1c1d1fda.koyeb.app"
 PISTON_API = "https://emkc.org/api/v2/piston/execute"
 
-# --- FILE READING HELPER ---
-def read_config_file(path: str, default_value: str) -> str:
+# Define Config Directory
+BASE_DIR = Path(__file__).resolve().parent.parent
+CONFIG_DIR = BASE_DIR / "config"
+
+# --- HELPER: LOAD CONFIG FILES ---
+def read_config_file(filename: str, default_value: str) -> str:
     """Dynamically reads prompt files from the config folder."""
     try:
-        clean_path = path.lstrip("/") 
-        if os.path.exists(clean_path):
-            with open(clean_path, "r", encoding="utf-8") as f:
+        file_path = CONFIG_DIR / filename
+        if file_path.exists():
+            with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read().strip()
                 if content: return content
     except Exception as e:
-        logger.error(f"Error reading config file {path}: {e}")
+        logger.warning(f"Config load error {filename}: {e}")
     return default_value
 
-# --- SINGLE GOD MODE PROMPT (DYNAMIC LOAD) ---
-DEFAULT_GOD_PROMPT = """You are YUKU, the Ultimate AI Developer."""
-GOD_MODE_PROMPT = read_config_file("config/prompt.txt", DEFAULT_GOD_PROMPT)
+# --- DEFAULTS ---
+DEFAULT_GOD_PROMPT = """
+You are YUKU, the Ultimate AI Developer & Architect.
+RULES:
+1. Return JSON wrapped in ```json ... ``` blocks.
+2. Format: { "message": "...", "operations": [ { "action": "create", "path": "index.html", "content": "..." } ] }
+3. Always include 'index.html'.
+"""
+DEFAULT_FLUX_PROMPT = "Enhance this image prompt for high quality generation."
 
 # --- MODELS ---
 class MemoryModel(BaseModel):
@@ -62,6 +74,7 @@ class CodeRunRequest(BaseModel):
     code: str
 
 # --- HELPER FUNCTIONS ---
+
 def get_collection(name: str):
     if db is None: raise HTTPException(500, "DB Disconnected")
     return db[name]
@@ -103,6 +116,7 @@ async def call_pollinations(prompt: str, system: str) -> str:
         except: return json.dumps({"message": "AI Error", "operations": []})
 
 def sanitize_content(path: str, content: str) -> str:
+    """Strictly cleans content based on file extension."""
     path = path.lower()
     content = content.strip()
     
@@ -149,26 +163,13 @@ def process_vfs(text: str, vfs: dict) -> tuple[str, dict, bool]:
     return msg, new_vfs, updated
 
 def inject_assets(html: str, vfs: dict) -> str:
-    """
-    Injects CSS and JS into the HTML using lambda to avoid regex escape errors.
-    """
     if not html: return "<h1>Error: Empty HTML</h1>"
-    
     for path, code in vfs.items():
         name = path.split('/')[-1]
-        
-        # Safe replacement for CSS
         if path.endswith('.css'):
-            pattern = f'<link[^>]*href=["\'].*?{re.escape(name)}["\'][^>]*>'
-            # We use a lambda function for replacement to prevent 'bad escape' errors 
-            # when the 'code' variable contains backslashes (e.g., \n, \s, etc.)
-            html = re.sub(pattern, lambda m: f'<style>/*{path}*/\n{code}</style>', html, flags=re.I)
-            
-        # Safe replacement for JS
+            html = re.sub(f'<link[^>]*href=["\'].*?{re.escape(name)}["\'][^>]*>', f'<style>/*{path}*/\n{code}</style>', html, flags=re.I)
         if path.endswith('.js'):
-            pattern = f'<script[^>]*src=["\'].*?{re.escape(name)}["\'][^>]*>.*?</script>'
-            html = re.sub(pattern, lambda m: f'<script>/*{path}*/\n{code}</script>', html, flags=re.I|re.S)
-            
+            html = re.sub(f'<script[^>]*src=["\'].*?{re.escape(name)}["\'][^>]*>.*?</script>', f'<script>/*{path}*/\n{code}</script>', html, flags=re.I|re.S)
     return html
 
 # --- MASTER ENDPOINT ---
@@ -198,10 +199,10 @@ async def ask_ai(
             vfs = c.get("vfs_state", {})
             memory = c.get("memory", "")
 
-    # RELOAD PROMPT PER REQUEST
-    current_sys_prompt = read_config_file("config/prompt.txt", GOD_MODE_PROMPT)
-
-    sys_prompt = f"{current_sys_prompt}\nMEMORY: {memory}"
+    # SINGLE GOD PROMPT
+    god_prompt = read_config_file("prompt.txt", DEFAULT_GOD_PROMPT)
+    
+    sys_prompt = f"{god_prompt}\nMEMORY: {memory}"
     sys_prompt += f"\nCURRENT FILES: {json.dumps(list(vfs.keys()))}"
 
     final = f"USER: {current_user['fullname']}\nFILES: {file_ctx}\nWEB: {search_ctx}\nQUERY: {prompt}"
@@ -220,12 +221,12 @@ async def ask_ai(
 
     return {"status": "success", "chat_id": fid, "response": clean, "vfs": vfs, "data": msg}
 
-# --- IMAGE GEN ---
+# --- IMAGE GENERATION ---
 @router.post("/generate-image")
 async def generate_image(prompt: str = Form(...), current_user: Dict = Depends(auth_utils.get_current_user), chat_id: Optional[str] = Form(None)):
-    flux_system = read_config_file("config/flux_enhance.txt", "Prompt Engineer")
+    flux_sys = read_config_file("flux_enhance.txt", "Enhance prompt.")
+    enhanced = await call_pollinations(f"Enhance: {prompt}", flux_sys)
     
-    enhanced = await call_pollinations(f"Enhance for image: {prompt}", flux_system)
     url = f"https://flux-schnell.hello-kaiiddo.workers.dev/img?prompt={urllib.parse.quote(enhanced)}&t={int(time.time())}"
     try:
         async with httpx.AsyncClient() as c:
@@ -238,51 +239,56 @@ async def generate_image(prompt: str = Form(...), current_user: Dict = Depends(a
     if chat_id: get_collection("chat_history").update_one({"_id": ObjectId(chat_id)}, {"$push": {"messages": msg}})
     return {"status": "success", "image_url": data_uri}
 
-# --- DEVOPS ---
+# --- DEVOPS: PUBLISH & LIVE ---
 @router.post("/publish/{chat_id}")
 async def publish(chat_id: str, u: Dict = Depends(auth_utils.get_current_user)):
     c = get_collection("chat_history").find_one({"_id": ObjectId(chat_id)})
-    if not c: raise HTTPException(404)
+    if not c or not c.get("vfs_state"): 
+        raise HTTPException(400, "No code to publish")
+        
     did = secrets.token_urlsafe(6)
-    get_collection("deployments").insert_one({"did": did, "vfs": c.get("vfs_state", {}), "uid": str(u["_id"])})
-    return {"url": f"{BACKEND_URL}/ai/view/{did}"}
+    get_collection("deployments").insert_one({
+        "did": did, 
+        "vfs": c.get("vfs_state", {}), 
+        "uid": str(u["_id"]),
+        "created_at": datetime.now(timezone.utc)
+    })
+    return {"url": f"{BACKEND_URL}/ai/view/{did}", "deployment_id": did}
 
 @router.get("/view/{did}")
 async def view(did: str):
     d = get_collection("deployments").find_one({"did": did})
-    if not d: return HTMLResponse("404", 404)
+    if not d: return HTMLResponse("<h1>404 - Not Found</h1>", 404)
     vfs = d["vfs"]
-    html = vfs.get("index.html", "<h1>No Index</h1>")
+    html = vfs.get("index.html", "<h1>No index.html</h1>")
     return HTMLResponse(inject_assets(html, vfs))
 
 @router.get("/live/{chat_id}")
 async def live(chat_id: str):
     c = get_collection("chat_history").find_one({"_id": ObjectId(chat_id)})
-    if not c: return HTMLResponse("404", 404)
-    vfs = c.get("vfs_state", {})
-    html = vfs.get("index.html", "<h1>Building...</h1>")
+    if not c: return HTMLResponse("Project Not Found", 404)
     
-    # Basic Console Hijack for Parent Window Logging
+    vfs = c.get("vfs_state", {})
+    if "index.html" not in vfs:
+        return HTMLResponse("<h2 style='color:white'>No index.html generated.</h2>")
+        
+    html = vfs.get("index.html")
+    
+    # Console Injection
     js = """<script>
     (function(){
         const s=window.parent.postMessage.bind(window.parent);
-        console.log=(...a)=>s({type:'log',args:a},'*');
-        console.error=(...a)=>s({type:'error',args:a},'*');
+        const _log=console.log, _err=console.error;
+        console.log=(...a)=>{s({type:'log',args:a},'*');_log.apply(console,a)};
+        console.error=(...a)=>{s({type:'error',args:a},'*');_err.apply(console,a)};
     })();</script>"""
     
     if "<head>" in html: html = html.replace("<head>", f"<head>{js}")
     else: html = js + html
     
-    # Call the fixed inject_assets function
-    try:
-        final_html = inject_assets(html, vfs)
-    except Exception as e:
-        logger.error(f"Injection Error: {e}")
-        final_html = html # Fallback to raw HTML if injection fails drastically
+    return HTMLResponse(inject_assets(html, vfs))
 
-    return HTMLResponse(final_html)
-
-# --- MEMORY & UTILS ---
+# --- UTILS & MEMORY ---
 @router.get("/chat/{chat_id}/memory")
 async def get_memory(chat_id: str):
     c = get_collection("chat_history").find_one({"_id": ObjectId(chat_id)})
@@ -292,6 +298,15 @@ async def get_memory(chat_id: str):
 async def set_memory(chat_id: str, m: MemoryModel):
     get_collection("chat_history").update_one({"_id": ObjectId(chat_id)}, {"$set": {"memory": m.memory}})
     return {"status": "updated"}
+
+@router.get("/download-project/{chat_id}")
+async def download_project(chat_id: str):
+    chat = get_collection("chat_history").find_one({"_id": ObjectId(chat_id)})
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for k, v in chat.get("vfs_state", {}).items(): z.writestr(k, v)
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/zip", headers={"Content-Disposition": f"attachment; filename=project_{chat_id}.zip"})
 
 @router.post("/run-code")
 async def run_code(r: CodeRunRequest):
