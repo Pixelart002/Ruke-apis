@@ -36,29 +36,24 @@ router = APIRouter(prefix="/ai", tags=["AI Core Legacy"])
 BACKEND_URL = "https://giant-noell-pixelart002-1c1d1fda.koyeb.app"
 PISTON_API = "https://emkc.org/api/v2/piston/execute"
 
-# --- SINGLE GOD MODE PROMPT ---
-GOD_MODE_PROMPT = """
-You are YUKU, the Ultimate AI Developer & Architect.
-You are capable of General Chat, Complex Reasoning, and Full-Stack Coding.
+# --- FILE READING HELPER ---
+def read_config_file(path: str, default_value: str) -> str:
+    """Dynamically reads prompt files from the config folder."""
+    try:
+        # Removes leading slash if present to avoid path issues
+        clean_path = path.lstrip("/") 
+        if os.path.exists(clean_path):
+            with open(clean_path, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+                if content: return content
+    except Exception as e:
+        logger.error(f"Error reading config file {path}: {e}")
+    return default_value
 
-RULES FOR CODING (VFS):
-1. If the user asks for code, a website, or an app, you MUST use the Virtual File System.
-2. Return JSON wrapped in ```json ... ``` blocks.
-3. Format:
-{
-  "message": "I have scaffolded the application.",
-  "operations": [
-    { "action": "create", "path": "index.html", "content": "<!DOCTYPE html>..." },
-    { "action": "create", "path": "style.css", "content": "body { background: #000; }" },
-    { "action": "create", "path": "script.js", "content": "console.log('Ready');" }
-  ]
-}
-4. FILE RULES:
-   - index.html: Only HTML. Link CSS/JS via relative paths.
-   - style.css: Only CSS. No <style> tags.
-   - script.js: Only JS. No <script> tags.
-5. Always include 'index.html' for web projects.
-"""
+# --- SINGLE GOD MODE PROMPT (DYNAMIC LOAD) ---
+# Default fallback provided in case file is missing, but tries to read file first
+DEFAULT_GOD_PROMPT = """You are YUKU, the Ultimate AI Developer."""
+GOD_MODE_PROMPT = read_config_file("config/prompt.txt", DEFAULT_GOD_PROMPT)
 
 # --- MODELS ---
 class MemoryModel(BaseModel):
@@ -169,7 +164,7 @@ def inject_assets(html: str, vfs: dict) -> str:
 @router.post("/ask")
 async def ask_ai(
     prompt: str = Form(...),
-    tool_id: str = Form("god_mode"), # Unused but kept for compatibility
+    tool_id: str = Form("god_mode"), 
     chat_id: Optional[str] = Form(None),
     files: List[UploadFile] = File(None),
     current_user: Dict = Depends(auth_utils.get_current_user)
@@ -192,8 +187,10 @@ async def ask_ai(
             vfs = c.get("vfs_state", {})
             memory = c.get("memory", "")
 
-    # ALWAYS USE GOD MODE PROMPT
-    sys_prompt = f"{GOD_MODE_PROMPT}\nMEMORY: {memory}"
+    # RELOAD PROMPT PER REQUEST (Optional: ensures live updates without restart)
+    current_sys_prompt = read_config_file("config/prompt.txt", GOD_MODE_PROMPT)
+
+    sys_prompt = f"{current_sys_prompt}\nMEMORY: {memory}"
     sys_prompt += f"\nCURRENT FILES: {json.dumps(list(vfs.keys()))}"
 
     final = f"USER: {current_user['fullname']}\nFILES: {file_ctx}\nWEB: {search_ctx}\nQUERY: {prompt}"
@@ -215,7 +212,10 @@ async def ask_ai(
 # --- IMAGE GEN ---
 @router.post("/generate-image")
 async def generate_image(prompt: str = Form(...), current_user: Dict = Depends(auth_utils.get_current_user), chat_id: Optional[str] = Form(None)):
-    enhanced = await call_pollinations(f"Enhance for image: {prompt}", "Prompt Engineer")
+    # Dynamically read the Flux Enhancement Prompt from file
+    flux_system = read_config_file("config/flux_enhance.txt", "Prompt Engineer")
+    
+    enhanced = await call_pollinations(f"Enhance for image: {prompt}", flux_system)
     url = f"https://flux-schnell.hello-kaiiddo.workers.dev/img?prompt={urllib.parse.quote(enhanced)}&t={int(time.time())}"
     try:
         async with httpx.AsyncClient() as c:
