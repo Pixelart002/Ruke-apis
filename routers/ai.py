@@ -39,7 +39,7 @@ router = APIRouter(prefix="/ai", tags=["AI Core"])
 
 # --- CONSTANTS ---
 # Update this with your deployed backend URL if needed
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+BACKEND_URL = os.getenv("BACKEND_URL", "https://giant-noell-pixelart002-1c1d1fda.koyeb.app")
 PISTON_API = "https://emkc.org/api/v2/piston/execute"
 
 # --- SYSTEM PROMPTS ---
