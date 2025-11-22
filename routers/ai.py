@@ -8,15 +8,14 @@ import io
 import secrets
 import zipfile
 import re
-from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 
 # --- LIBRARIES ---
 from PIL import Image
 import httpx
-# [FIX] Switched to DDGS (Stable) to fix ImportError: cannot import name 'AsyncDDGS'
+# Use DDGS (Stable)
 from duckduckgo_search import DDGS 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Body
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, HTMLResponse
 from pydantic import BaseModel
 from bson import ObjectId
@@ -37,17 +36,31 @@ router = APIRouter(prefix="/ai", tags=["AI Core Legacy"])
 BACKEND_URL = "https://giant-noell-pixelart002-1c1d1fda.koyeb.app"
 PISTON_API = "https://emkc.org/api/v2/piston/execute"
 
-# --- SYSTEM PROMPTS ---
+# --- SYSTEM PROMPT (STRICT V0 MODE) ---
 VFS_PROMPT = """
-You are YUKU, an Expert AI DevOps Architect.
-You have a Virtual File System (VFS). You MUST organize code into FOLDERS.
+You are YUKU, an Expert AI Full-Stack Architect (v0 style).
+You operate a Virtual File System (VFS).
 
-RULES:
-1. Return JSON wrapped in ```json ... ```.
-2. Format: { "message": "...", "operations": [ { "action": "create", "path": "src/components/Nav.js", "content": "..." } ] }
-3. USE RELATIVE PATHS. 
-4. ALWAYS include 'index.html' in the root.
-5. Design: Modern, Dark Mode, Emerald Accents (v0 style).
+CRITICAL RULES FOR FILE CONTENT:
+1. **index.html**: Must contain ONLY valid HTML5 code. Link CSS/JS using relative paths.
+   - Correct: <link rel="stylesheet" href="style.css">
+   - Correct: <script src="script.js"></script>
+2. **style.css**: Must contain ONLY raw CSS rules. 
+   - PROHIBITED: <style> tags, HTML tags, JavaScript.
+3. **script.js**: Must contain ONLY raw JavaScript. 
+   - PROHIBITED: <script> tags, HTML tags, CSS.
+4. **JSON Output**: Return a valid JSON object wrapped in ```json ... ``` blocks.
+
+FORMAT:
+{
+  "message": "Creating portfolio...",
+  "operations": [
+    { "action": "create", "path": "index.html", "content": "<!DOCTYPE html><html>...</html>" },
+    { "action": "create", "path": "style.css", "content": "body { background: #000; }" },
+    { "action": "create", "path": "script.js", "content": "console.log('Ready');" }
+  ]
+}
+5. ENTRY POINT: You MUST create 'index.html'.
 """
 
 # --- MODELS ---
@@ -84,25 +97,20 @@ async def parse_files(file: UploadFile) -> str:
     except: return f"[Error reading {fname}]"
     return f"\n=== FILE: {fname} ===\n{content}\n"
 
-# [FIXED] Using Synchronous DDGS which is compatible with all versions
-async def web_search(query: str) -> str:
+# Synchronous Search (Stable)
+def perform_web_search(query: str) -> str:
     try:
-        # Use context manager to handle session correctly
         with DDGS() as ddgs:
-            # .text() returns a generator/list, we convert to list to check content
             results = list(ddgs.text(query, max_results=3))
             if not results: return ""
-            
             summary = "\n[WEB DATA]:\n"
-            for r in results: 
-                summary += f"- {r['title']}: {r['body']}\n"
+            for r in results: summary += f"- {r['title']}: {r['body']}\n"
             return summary
     except Exception as e:
-        # Log error but don't crash
         print(f"Search Error: {e}") 
         return ""
 
-async def call_ai(prompt: str, system: str) -> str:
+async def call_pollinations(prompt: str, system: str) -> str:
     full = f"{system}\n\nUSER: {prompt}\n\nASSISTANT:"
     url = f"https://text.pollinations.ai/{urllib.parse.quote(full)}?model=openai&seed={secrets.randbelow(9999)}"
     async with httpx.AsyncClient(timeout=120.0) as client:
@@ -110,6 +118,38 @@ async def call_ai(prompt: str, system: str) -> str:
             r = await client.get(url)
             return r.text.strip()
         except: return json.dumps({"message": "AI Error", "operations": []})
+
+def sanitize_content(path: str, content: str) -> str:
+    """
+    Strictly cleans file content based on extension to prevent mixed code.
+    """
+    path = path.lower()
+    
+    # 1. Clean Markdown Wrappers
+    content = re.sub(r'^```\w*\n', '', content)
+    content = re.sub(r'\n```$', '', content)
+    
+    # 2. CSS Sanitization
+    if path.endswith('.css'):
+        # Remove <style> tags and anything that looks like HTML
+        content = re.sub(r'<style[^>]*>', '', content, flags=re.I)
+        content = re.sub(r'</style>', '', content, flags=re.I)
+        # Remove script tags if any
+        content = re.sub(r'<script.*?>.*?</script>', '', content, flags=re.I|re.S)
+        # Ensure no HTML doctype
+        if "<!DOCTYPE" in content or "<html" in content:
+            # Aggressive Fallback: Extract only content inside {}
+            pass 
+
+    # 3. JS Sanitization
+    elif path.endswith('.js') or path.endswith('.ts') or path.endswith('.jsx'):
+        # Remove <script> tags
+        content = re.sub(r'<script[^>]*>', '', content, flags=re.I)
+        content = re.sub(r'</script>', '', content, flags=re.I)
+        # Remove CSS style blocks
+        content = re.sub(r'<style.*?>.*?</style>', '', content, flags=re.I|re.S)
+
+    return content.strip()
 
 def process_vfs(text: str, vfs: dict) -> tuple[str, dict, bool]:
     new_vfs = vfs.copy()
@@ -121,24 +161,42 @@ def process_vfs(text: str, vfs: dict) -> tuple[str, dict, bool]:
     
     if match:
         try:
-            data = json.loads(match.group(1))
+            json_str = match.group(1)
+            # Clean bad escapes
+            json_str = json_str.replace('\\n', '\\\\n')
+            
+            data = json.loads(json_str)
             msg = data.get("message", "Code updated.")
+            
             for op in data.get("operations", []):
-                updated = True
                 path = op['path'].strip('/')
-                if op['action'] in ['create', 'update']: new_vfs[path] = op['content']
-                elif op['action'] == 'delete' and path in new_vfs: del new_vfs[path]
-        except: pass
+                raw_content = op['content']
+                
+                # APPLY STRICT SANITIZATION
+                clean_content = sanitize_content(path, raw_content)
+                
+                updated = True
+                if op['action'] in ['create', 'update']: 
+                    new_vfs[path] = clean_content
+                elif op['action'] == 'delete' and path in new_vfs: 
+                    del new_vfs[path]
+        except Exception as e:
+            logger.error(f"VFS Parse Error: {e}")
+            
     return msg, new_vfs, updated
 
 def inject_assets(html: str, vfs: dict) -> str:
-    # Smart Linking for Folders
+    # Smart Linking: Inject CSS/JS into HTML
+    if not html: return "<h1>Error: Empty HTML</h1>"
+    
     for path, code in vfs.items():
         name = path.split('/')[-1]
         if path.endswith('.css'):
             html = re.sub(f'<link[^>]*href=["\'].*?{re.escape(name)}["\'][^>]*>', f'<style>/*{path}*/\n{code}</style>', html, flags=re.I)
         if path.endswith('.js'):
+            # Remove src and inject content
             html = re.sub(f'<script[^>]*src=["\'].*?{re.escape(name)}["\'][^>]*>.*?</script>', f'<script>/*{path}*/\n{code}</script>', html, flags=re.I|re.S)
+            
     return html
 
 # --- MASTER ENDPOINT ---
@@ -152,17 +210,14 @@ async def ask_ai(
 ):
     chats = get_collection("chat_history")
     
-    # 1. Parse Files
     file_ctx = ""
     if files:
         for f in files: file_ctx += await parse_files(f)
 
-    # 2. Search
     search_ctx = ""
     if any(t in prompt.lower() for t in ["search", "news", "latest", "price"]):
-        search_ctx = await web_search(prompt)
+        search_ctx = perform_web_search(prompt)
 
-    # 3. Load State & Memory
     vfs = {}
     memory = ""
     if chat_id and ObjectId.is_valid(chat_id):
@@ -171,7 +226,6 @@ async def ask_ai(
             vfs = c.get("vfs_state", {})
             memory = c.get("memory", "")
 
-    # 4. System Prompt
     agent = get_collection("ai_agents").find_one({"slug": tool_id})
     sys_prompt = agent["system_prompt"] if agent else VFS_PROMPT
     sys_prompt += f"\nMEMORY: {memory}"
@@ -179,12 +233,10 @@ async def ask_ai(
     if "code" in tool_id or "ide" in tool_id:
         sys_prompt += f"\nCURRENT FILES: {json.dumps(list(vfs.keys()))}"
 
-    # 5. Execute
     final = f"USER: {current_user['fullname']}\nFILES: {file_ctx}\nWEB: {search_ctx}\nQUERY: {prompt}"
-    raw = await call_ai(final, sys_prompt)
+    raw = await call_pollinations(final, sys_prompt)
     clean, vfs, updated = process_vfs(raw, vfs)
 
-    # 6. Save
     msg = {"role": "ai", "content": clean, "ts": datetime.now(timezone.utc), "vfs_updated": updated}
     if chat_id and ObjectId.is_valid(chat_id):
         chats.update_one({"_id": ObjectId(chat_id)}, 
@@ -197,10 +249,10 @@ async def ask_ai(
 
     return {"status": "success", "chat_id": fid, "response": clean, "vfs": vfs, "data": msg}
 
-# --- IMAGE GENERATION ---
+# --- IMAGE GEN ---
 @router.post("/generate-image")
 async def generate_image(prompt: str = Form(...), current_user: Dict = Depends(auth_utils.get_current_user), chat_id: str = Form(None)):
-    enhanced = await call_ai(f"Enhance: {prompt}", "Prompt Engineer")
+    enhanced = await call_pollinations(f"Enhance: {prompt}", "Prompt Engineer")
     url = f"https://flux-schnell.hello-kaiiddo.workers.dev/img?prompt={urllib.parse.quote(enhanced)}&t={int(time.time())}"
     try:
         async with httpx.AsyncClient() as c:
@@ -211,44 +263,7 @@ async def generate_image(prompt: str = Form(...), current_user: Dict = Depends(a
     
     msg = {"role": "flux", "content": prompt, "image_data": data_uri, "ts": datetime.now()}
     if chat_id: get_collection("chat_history").update_one({"_id": ObjectId(chat_id)}, {"$push": {"messages": msg}})
-    
     return {"status": "success", "image_url": data_uri}
-
-# --- AGENT REGISTRY (New!) ---
-@router.post("/agents/register")
-async def register_agent(agent: AgentModel, u: Dict = Depends(auth_utils.get_current_user)):
-    get_collection("ai_agents").update_one({"slug": agent.slug}, {"$set": agent.dict()}, upsert=True)
-    return {"status": "registered", "slug": agent.slug}
-
-@router.get("/agents")
-async def list_agents():
-    return list(get_collection("ai_agents").find({}, {"_id": 0}))
-
-@router.get("/agent/{slug}")
-async def get_agent(slug: str):
-    return get_collection("ai_agents").find_one({"slug": slug}, {"_id": 0}) or {}
-
-# --- MEMORY MANAGEMENT ---
-@router.get("/chat/{chat_id}/memory")
-async def get_memory(chat_id: str):
-    c = get_collection("chat_history").find_one({"_id": ObjectId(chat_id)})
-    return {"memory": c.get("memory", "")}
-
-@router.post("/chat/{chat_id}/memory")
-async def set_memory(chat_id: str, m: MemoryModel):
-    get_collection("chat_history").update_one({"_id": ObjectId(chat_id)}, {"$set": {"memory": m.memory}})
-    return {"status": "updated"}
-
-# --- SDK & API KEYS ---
-@router.post("/api-key/generate")
-async def gen_api_key(u: Dict = Depends(auth_utils.get_current_user)):
-    key = f"sk_yuku_{secrets.token_hex(24)}"
-    get_collection("users").update_one({"_id": u["_id"]}, {"$set": {"sdk_key": key}})
-    return {"api_key": key}
-
-@router.get("/api-key")
-async def get_api_key(u: Dict = Depends(auth_utils.get_current_user)):
-    return {"api_key": u.get("sdk_key", "No key generated")}
 
 # --- DEVOPS: PUBLISH & LIVE ---
 @router.post("/publish/{chat_id}")
@@ -264,15 +279,21 @@ async def view(did: str):
     d = get_collection("deployments").find_one({"did": did})
     if not d: return HTMLResponse("404", 404)
     vfs = d["vfs"]
-    html = vfs.get("index.html", "<h1>No Index</h1>")
+    html = vfs.get("index.html", "<h1 style='color:white'>No Index Found</h1>")
     return HTMLResponse(inject_assets(html, vfs))
 
 @router.get("/live/{chat_id}")
 async def live(chat_id: str):
     c = get_collection("chat_history").find_one({"_id": ObjectId(chat_id)})
-    if not c: return HTMLResponse("404", 404)
+    if not c: return HTMLResponse("Project Not Found", 404)
     vfs = c.get("vfs_state", {})
-    html = vfs.get("index.html", "<h1>Building...</h1>")
+    
+    # Fallback if index.html is missing
+    if "index.html" not in vfs:
+        return HTMLResponse("<h2 style='color:white; font-family:sans-serif'>No index.html generated yet. Ask AI to create one.</h2>")
+        
+    html = vfs.get("index.html")
+    
     # Console Injection
     js = """<script>
     (function(){
@@ -280,9 +301,31 @@ async def live(chat_id: str):
         console.log=(...a)=>s({type:'log',args:a},'*');
         console.error=(...a)=>s({type:'error',args:a},'*');
     })();</script>"""
+    
     if "<head>" in html: html = html.replace("<head>", f"<head>{js}")
     else: html = js + html
+    
     return HTMLResponse(inject_assets(html, vfs))
+
+# --- AGENTS & MEMORY ---
+@router.post("/agents/register")
+async def register_agent(agent: AgentModel, u: Dict = Depends(auth_utils.get_current_user)):
+    get_collection("ai_agents").update_one({"slug": agent.slug}, {"$set": agent.dict()}, upsert=True)
+    return {"status": "registered", "slug": agent.slug}
+
+@router.get("/agents")
+async def list_agents():
+    return list(get_collection("ai_agents").find({}, {"_id": 0}))
+
+@router.get("/chat/{chat_id}/memory")
+async def get_memory(chat_id: str):
+    c = get_collection("chat_history").find_one({"_id": ObjectId(chat_id)})
+    return {"memory": c.get("memory", "")}
+
+@router.post("/chat/{chat_id}/memory")
+async def set_memory(chat_id: str, m: MemoryModel):
+    get_collection("chat_history").update_one({"_id": ObjectId(chat_id)}, {"$set": {"memory": m.memory}})
+    return {"status": "updated"}
 
 # --- UTILS ---
 @router.post("/run-code")
@@ -307,6 +350,12 @@ def get_c(chat_id: str):
     c = get_collection("chat_history").find_one({"_id": ObjectId(chat_id)})
     c["id"] = str(c["_id"]); del c["_id"]
     return c
+
+@router.post("/api-key/generate")
+async def gen_api_key(u: Dict = Depends(auth_utils.get_current_user)):
+    key = f"sk_yuku_{secrets.token_hex(24)}"
+    get_collection("users").update_one({"_id": u["_id"]}, {"$set": {"sdk_key": key}})
+    return {"api_key": key}
 
 @router.get("/health")
 async def health():
