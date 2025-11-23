@@ -1,8 +1,0 @@
-{
-"api_key": "2sq2ZNGOJXX3Kptp5GkXqZY0G",
-"api_key_secret": "5y46tB1l0S4hhNX3K2shUfbxN6POdZoISVvRzPmDzsAjAMGKiZ",
-"access_token": "1831312211643342848-1Hf6ZHcco116ejd5tm7Xv2UvsFvps0",
-"access_token_secret": "LUkndEhJCiDMymTDjELOwwhMnWW9RLOCO9bncAwldz2cV",
-"image_prompt": "An astronaut exploring a vibrant neon coral reef, 4K digital painting",
-"text_prompt": "Write a compelling tweet about the beauty of the deep sea and the cosmos. Use three relevant hashtags."
-}
