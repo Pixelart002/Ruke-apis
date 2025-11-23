@@ -94,30 +94,53 @@ def generate_ai_content(image_prompt: str, text_prompt: str) -> tuple[io.BytesIO
 
 
 def post_to_twitter_endpoint(api: tweepy.API, image_bytes: io.BytesIO, text_content: str) -> Dict[str, str]:
-    """X पर पोस्ट करने की दो-चरणीय प्रक्रिया संभालता है।"""
+    """X पर पोस्ट करने की दो-चरणीय प्रक्रिया संभालता है, 403 होने पर टेक्स्ट-ओनली फॉलबैक करता है।"""
+    
+    media_id_string = None
     
     try:
-        # 1. मीडिया अपलोड
+        # 1. मीडिया अपलोड (V1.1)
         print("   [INFO] Uploading media to X server...")
-        media = api.media_upload(filename="ai_image.jpg", file=image_bytes)
         
-        # 2. ट्वीट पोस्ट करें
-        print("   [INFO] Creating tweet...")
-        api.update_status(
-            status=text_content,
-            media_ids=[media.media_id]
-        )
-        
-        return {"post_id": media.media_id_string, "message": "Post successful."}
+        # हम सीधे अपलोड करते हैं और जानते हैं कि Free Tier पर यहाँ 403 Forbidden मिल सकता है
+        try:
+            media = api.media_upload(filename="ai_image.jpg", file=image_bytes)
+            media_id_string = media.media_id_string
+            print("   [SUCCESS] Media uploaded.")
+            
+            # 2. ट्वीट पोस्ट करें (Media के साथ)
+            print("   [INFO] Creating tweet with image...")
+            api.update_status(
+                status=text_content,
+                media_ids=[media.media_id]
+            )
+            return {"post_id": media_id_string, "message": "Post successful with image."}
 
-    except tweepy.TweepyException as e:
-        raise HTTPException(status_code=500, detail=f"X API Error during post: {e}")
+        except tweepy.TweepyException as e:
+            error_message = str(e)
+            print(f"🚨🚨 CRITICAL TWEEPY ERROR DETAIL: {error_message}")
+            
+            # 🚨 403 Forbidden (453) Error को पहचानें
+            if "403 Forbidden" in error_message or "453" in error_message:
+                print("   [FALLBACK] 403/453 error detected. Falling back to text-only post.")
+                
+                # --- V1.1 Text-Only फॉलबैक ---
+                api.update_status(status=f"🖼️ [Image not posted due to Free Tier restriction].\n\n{text_content}")
+                
+                # V2 Free Tier पर पोस्टिंग सफल हुई, लेकिन इमेज नहीं है।
+                return {"post_id": "TEXT_ONLY_FALLBACK", "message": "Post successful (Text-Only) due to API access limits. Please upgrade your X API access level to enable image posting."}
+            
+            else:
+                # यदि 403 के अलावा कोई अन्य गंभीर त्रुटि है, तो इसे वापस भेज दें
+                raise HTTPException(status_code=500, detail=f"X API Error during post: {error_message}")
+
     except Exception as e:
+        # अन्य सभी अनपेक्षित त्रुटियाँ
         raise HTTPException(status_code=500, detail=f"Unexpected error during posting: {e}")
 
 
 # --- 4. ROUTER ENDPOINT DEFINITION ---
-
+# ... (rest of the router definition remains the same)
 @router.post(
     "/trigger-post",
     response_model=PostResponse,
@@ -137,10 +160,10 @@ async def trigger_post(request_data: TriggerRequest):
         # 2. Generate content using body data
         image_bytes, caption = generate_ai_content(request_data.image_prompt, request_data.text_prompt)
         
-        # 3. Post to X
+        # 3. Post to X (includes the 403 fallback)
         post_result = post_to_twitter_endpoint(api, image_bytes, caption)
         
-        print(f"--- SUCCESS --- Post ID: {post_result['post_id']}")
+        print(f"--- STATUS --- Post ID: {post_result['post_id']} | Message: {post_result['message']}")
         
         return {
             "status": "success",
