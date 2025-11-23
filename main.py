@@ -7,7 +7,7 @@ from routers.users import router as users_router
 from routers.notifications import router as notifications_router
 from routers.feedback import router as feedback_router
 from routers.ai import router as ai_router
-
+from routers.twitter import router as twitter_router
 
 app = FastAPI(
     title="YUKU Protocol API",
@@ -33,6 +33,7 @@ app.include_router(users_router)
 app.include_router(notifications_router)
 app.include_router(feedback_router)
 app.include_router(ai_router)
+app.include_router(twitter_router)
 
 # --- Root Endpoint ---
 @app.get("/")
