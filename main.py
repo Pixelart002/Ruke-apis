@@ -9,7 +9,6 @@ from routers.feedback import router as feedback_router
 from routers.ai import router as ai_router
 from routers.maim import router as maim_router
 from routers.blog import router as blog_router
-pip install python-slugify
 
 app = FastAPI(
     title="YUKU Protocol API",
