@@ -12,8 +12,7 @@ from auth import utils as auth_utils
 router = APIRouter(prefix="/blog", tags=["Personal Blog"])
 
 # --- CONFIGURATION ---
-# Yahan apna email likho. Sirf ye email wala banda hi post daal payega.
-MY_ADMIN_EMAIL = "9013ms@gmail.com" 
+MY_ADMIN_EMAIL = "9013ms@gmail.com"  # Updated with your email
 
 # --- 1. SCHEMAS (Data Models) ---
 class BlogPostCreate(BaseModel):
@@ -28,81 +27,77 @@ class BlogPostResponse(BlogPostCreate):
     slug: str
     created_at: datetime
     views: int
+    # Note: author_id is NOT here, so Pydantic will filter it out, preventing errors
 
 # --- 2. SECURITY CHECK (Helper) ---
 def verify_admin(current_user: dict = Depends(auth_utils.get_current_user)):
-    """
-    Ye function gatekeeper hai. 
-    Agar email match nahi hua toh error fek dega.
-    """
     if current_user["email"] != MY_ADMIN_EMAIL:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Sirf Owner hi post upload kar sakta hai."
+            detail=f"Access Denied. You are {current_user['email']}, but Owner is {MY_ADMIN_EMAIL}"
         )
     return current_user
 
 # --- 3. ENDPOINTS ---
 
-# A. Create Post (SECURE - Sirf Aap)
+# A. Create Post (SECURE)
 @router.post("/create", response_model=BlogPostResponse)
 async def create_post(
     post: BlogPostCreate,
-    admin_user: dict = Depends(verify_admin) # <-- Ye check karega ki aap hi ho
+    admin_user: dict = Depends(verify_admin)
 ):
-    # 1. Slug banao (URL ke liye)
     slug = slugify(post.title)
-    
-    # Check duplicate slug
     if db.posts.find_one({"slug": slug}):
         slug = f"{slug}-{int(datetime.now().timestamp())}"
 
-    # 2. Data Prepare karo
     new_post = post.dict()
     new_post.update({
         "slug": slug,
-        "author_id": admin_user["_id"],
+        "author_id": admin_user["_id"], # Saves as ObjectId
         "author_name": admin_user["fullname"],
         "created_at": datetime.now(),
         "views": 0
     })
 
-    # 3. Save karo
     result = db.posts.insert_one(new_post)
     new_post["id"] = str(result.inserted_id)
     
     return new_post
 
-# B. Read All Posts (PUBLIC - Koi bhi dekh sakta hai)
-@router.get("/")
+# B. Read All Posts (PUBLIC) - FIXED HERE
+@router.get("/", response_model=List[BlogPostResponse]) # <--- ADDED THIS LINE
 async def get_all_posts(limit: int = 10):
+    # 1. Fetch from DB
     posts_cursor = db.posts.find(
         {"is_published": True}
     ).sort("created_at", -1).limit(limit)
     
     posts = []
     for p in posts_cursor:
+        # 2. Convert _id to string manually for Pydantic
         p["id"] = str(p["_id"])
+        
+        # 3. Handle potential ObjectId in author_id by filtering
+        # Since we added response_model=List[BlogPostResponse], 
+        # FastAPI will ignore 'author_id' (ObjectId) and only send valid JSON.
         posts.append(p)
     
     return posts
 
 # C. Read Single Post (PUBLIC)
-@router.get("/{slug}")
+@router.get("/{slug}", response_model=BlogPostResponse) # <--- ADDED THIS LINE TOO
 async def get_single_post(slug: str):
-    # 1. Post dhundo
     post = db.posts.find_one({"slug": slug, "is_published": True})
     
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
     
-    # 2. Views badhao (Optional)
     db.posts.update_one({"_id": post["_id"]}, {"$inc": {"views": 1}})
     
     post["id"] = str(post["_id"])
     return post
 
-# D. Delete Post (SECURE - Sirf Aap)
+# D. Delete Post (SECURE)
 @router.delete("/{slug}")
 async def delete_post(slug: str, admin_user: dict = Depends(verify_admin)):
     result = db.posts.delete_one({"slug": slug})
@@ -110,4 +105,4 @@ async def delete_post(slug: str, admin_user: dict = Depends(verify_admin)):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Post nahi mila")
         
-    return {"message": "Post successfully delete ho gaya"}
+    return {"message": "Post successfully deleted"}
