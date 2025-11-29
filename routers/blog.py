@@ -22,6 +22,14 @@ class BlogPostCreate(BaseModel):
     cover_image: Optional[str] = None
     is_published: bool = True
 
+# [NEW] Model for Editing (Sab kuch Optional hai)
+class BlogPostUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    tags: Optional[List[str]] = None
+    cover_image: Optional[str] = None
+    is_published: Optional[bool] = None
+
 class BlogPostResponse(BlogPostCreate):
     id: str
     slug: str
@@ -85,7 +93,35 @@ async def create_post(
     created_post = db.posts.find_one({"_id": result.inserted_id})
     return fix_post_id(created_post)
 
-# B. Read All Posts (PUBLIC)
+# [NEW] B. Edit Post (SECURE) - UPDATE ENDPOINT
+@router.put("/{slug}", response_model=BlogPostResponse)
+async def update_post(
+    slug: str,
+    update_data: BlogPostUpdate,
+    admin_user: dict = Depends(verify_admin)
+):
+    # 1. Check if post exists
+    existing_post = db.posts.find_one({"slug": slug})
+    if not existing_post:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    # 2. Filter out None values (sirf wahi update karo jo user ne bheja hai)
+    data_to_update = {k: v for k, v in update_data.dict().items() if v is not None}
+
+    if not data_to_update:
+        raise HTTPException(status_code=400, detail="No data provided for update")
+
+    # 3. Update in Database
+    db.posts.update_one(
+        {"slug": slug},
+        {"$set": data_to_update}
+    )
+
+    # 4. Fetch updated post
+    updated_post = db.posts.find_one({"slug": slug})
+    return fix_post_id(updated_post)
+
+# C. Read All Posts (PUBLIC)
 @router.get("/", response_model=List[BlogPostResponse])
 async def get_all_posts(limit: int = 10):
     posts_cursor = db.posts.find(
@@ -99,7 +135,7 @@ async def get_all_posts(limit: int = 10):
     
     return clean_posts
 
-# C. Read Single Post (PUBLIC)
+# D. Read Single Post (PUBLIC)
 @router.get("/{slug}", response_model=BlogPostResponse)
 async def get_single_post(slug: str):
     post = db.posts.find_one({"slug": slug, "is_published": True})
@@ -112,7 +148,7 @@ async def get_single_post(slug: str):
     # Use helper to clean ObjectId
     return fix_post_id(post)
 
-# D. Delete Post (SECURE)
+# E. Delete Post (SECURE)
 @router.delete("/{slug}")
 async def delete_post(slug: str, admin_user: dict = Depends(verify_admin)):
     result = db.posts.delete_one({"slug": slug})
