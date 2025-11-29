@@ -12,7 +12,7 @@ from auth import utils as auth_utils
 router = APIRouter(prefix="/blog", tags=["Personal Blog"])
 
 # --- CONFIGURATION ---
-MY_ADMIN_EMAIL = "9013ms@gmail.com"  # Updated with your email
+MY_ADMIN_EMAIL = "9013ms@gmail.com"
 
 # --- 1. SCHEMAS (Data Models) ---
 class BlogPostCreate(BaseModel):
@@ -27,7 +27,6 @@ class BlogPostResponse(BlogPostCreate):
     slug: str
     created_at: datetime
     views: int
-    # Note: author_id is NOT here, so Pydantic will filter it out, preventing errors
 
 # --- 2. SECURITY CHECK (Helper) ---
 def verify_admin(current_user: dict = Depends(auth_utils.get_current_user)):
@@ -37,6 +36,27 @@ def verify_admin(current_user: dict = Depends(auth_utils.get_current_user)):
             detail=f"Access Denied. You are {current_user['email']}, but Owner is {MY_ADMIN_EMAIL}"
         )
     return current_user
+
+# --- HELPER FUNCTION TO FIX MONGODB OBJECTID ---
+def fix_post_id(post_doc):
+    """
+    This function manually converts ObjectId to string
+    and removes the original _id field to prevent crashes.
+    """
+    if not post_doc:
+        return None
+        
+    # 1. Convert _id to string 'id'
+    post_doc["id"] = str(post_doc["_id"])
+    
+    # 2. DELETE the original _id (ObjectId) so FastAPI doesn't choke on it
+    del post_doc["_id"]
+    
+    # 3. Handle author_id if it exists (Convert to string)
+    if "author_id" in post_doc:
+        post_doc["author_id"] = str(post_doc["author_id"])
+        
+    return post_doc
 
 # --- 3. ENDPOINTS ---
 
@@ -60,32 +80,27 @@ async def create_post(
     })
 
     result = db.posts.insert_one(new_post)
-    new_post["id"] = str(result.inserted_id)
     
-    return new_post
+    # Fetch the inserted document and fix ID
+    created_post = db.posts.find_one({"_id": result.inserted_id})
+    return fix_post_id(created_post)
 
-# B. Read All Posts (PUBLIC) - FIXED HERE
-@router.get("/", response_model=List[BlogPostResponse]) # <--- ADDED THIS LINE
+# B. Read All Posts (PUBLIC)
+@router.get("/", response_model=List[BlogPostResponse])
 async def get_all_posts(limit: int = 10):
-    # 1. Fetch from DB
     posts_cursor = db.posts.find(
         {"is_published": True}
     ).sort("created_at", -1).limit(limit)
     
-    posts = []
+    clean_posts = []
     for p in posts_cursor:
-        # 2. Convert _id to string manually for Pydantic
-        p["id"] = str(p["_id"])
-        
-        # 3. Handle potential ObjectId in author_id by filtering
-        # Since we added response_model=List[BlogPostResponse], 
-        # FastAPI will ignore 'author_id' (ObjectId) and only send valid JSON.
-        posts.append(p)
+        # Use helper to clean ObjectId
+        clean_posts.append(fix_post_id(p))
     
-    return posts
+    return clean_posts
 
 # C. Read Single Post (PUBLIC)
-@router.get("/{slug}", response_model=BlogPostResponse) # <--- ADDED THIS LINE TOO
+@router.get("/{slug}", response_model=BlogPostResponse)
 async def get_single_post(slug: str):
     post = db.posts.find_one({"slug": slug, "is_published": True})
     
@@ -94,8 +109,8 @@ async def get_single_post(slug: str):
     
     db.posts.update_one({"_id": post["_id"]}, {"$inc": {"views": 1}})
     
-    post["id"] = str(post["_id"])
-    return post
+    # Use helper to clean ObjectId
+    return fix_post_id(post)
 
 # D. Delete Post (SECURE)
 @router.delete("/{slug}")
