@@ -13,7 +13,7 @@ router = APIRouter(prefix="/blog", tags=["Personal Blog"])
 
 # --- CONFIGURATION ---
 # Yahan apna email likho. Sirf ye email wala banda hi post daal payega.
-MY_ADMIN_EMAIL = "admin@yuku.app" 
+MY_ADMIN_EMAIL = "9013ms@gmail.com" 
 
 # --- 1. SCHEMAS (Data Models) ---
 class BlogPostCreate(BaseModel):
