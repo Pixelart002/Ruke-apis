@@ -17,6 +17,7 @@ logger = logging.getLogger("AI_CORE")
 logger.setLevel(logging.INFO)
 router = APIRouter(prefix="/ai", tags=["AI Core"])
 
+# Pollinations API Endpoint (POST compatible)
 POLLINATIONS_URL = "https://text.pollinations.ai/"
 
 # --- SYSTEM PROMPT ---
@@ -30,17 +31,34 @@ def get_collection(name: str):
     return db[name]
 
 async def call_pollinations(prompt: str, system_prompt: str, model: str) -> str:
-    """Calls Pollinations AI API."""
-    full_prompt = f"{system_prompt}\n\nUSER QUERY: {prompt}"
-    encoded_prompt = urllib.parse.quote(full_prompt)
-    url = f"{POLLINATIONS_URL}{encoded_prompt}?model={model}&seed={secrets.randbelow(1000)}"
+    """
+    Calls Pollinations AI API using POST method.
+    This prevents 'URI Too Long' errors and supports larger contexts.
+    """
+    headers = {"Content-Type": "application/json"}
+    
+    # Construct JSON payload for POST request
+    # This structure mirrors OpenAI's chat completion format which Pollinations supports via POST
+    payload = {
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ],
+        "model": model,
+        "seed": secrets.randbelow(1000),
+        "jsonMode": False
+    }
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
-            r = await client.get(url)
+            # Using POST instead of GET
+            r = await client.post(POLLINATIONS_URL, json=payload, headers=headers)
+            
             if r.status_code == 200:
+                # Pollinations returns the raw text response directly
                 return r.text.strip()
             else:
+                logger.error(f"AI Provider Error: {r.status_code} - {r.text}")
                 return f"Error from AI Provider: {r.status_code}"
         except Exception as e:
             logger.error(f"Pollinations Network Error: {e}")
@@ -57,14 +75,14 @@ async def chat_endpoint(
 ):
     """
     Simple Chat Interface. 
-    Handles: Text Input + AI Response + History Saving.
+    Handles: Text Input + AI Response (via POST) + History Saving.
     """
     chats_collection = get_collection("chat_history")
 
-    # 1. Call AI
+    # 1. Call AI (using stable POST method)
     ai_response = await call_pollinations(prompt, DEVOPS_TEMPLATE, model)
 
-    # 2. Prepare Messages
+    # 2. Prepare Messages for Storage
     user_msg = {
         "role": "user",
         "content": prompt,
@@ -78,13 +96,14 @@ async def chat_endpoint(
     }
 
     # 3. Save to Database
+    final_chat_id = chat_id
+    
     if chat_id and ObjectId.is_valid(chat_id):
         # Update existing chat
         chats_collection.update_one(
             {"_id": ObjectId(chat_id)},
             {"$push": {"messages": {"$each": [user_msg, ai_msg]}}}
         )
-        final_chat_id = chat_id
     else:
         # Create new chat
         new_chat = {
