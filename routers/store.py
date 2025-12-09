@@ -81,12 +81,16 @@ async def create_store(
     # D. SAVE TO DATABASE
     result = db.stores.insert_one(new_store)
     
+    # URL Format Update: Relative path with Query Parameter
+    # Example: /pages/store.html?store=shree-balaji-traders
+    frontend_url_path = f"/pages/store.html?store={slug}"
+
     # E. RETURN SUCCESS RESPONSE
     return {
         "id": str(result.inserted_id),
         "name": new_store["name"],
         "slug": new_store["slug"],
-        "store_url": f"/shop/{new_store['slug']}",
+        "store_url": frontend_url_path, # Updated Here
         "owner_id": user_id,
         "is_active": new_store["is_active"],
         "created_at": new_store["created_at"]
@@ -110,4 +114,10 @@ async def get_my_store_details(
     
     # Convert ObjectId to string
     store["id"] = str(store["_id"])
+
+    # Important: Agar database me store_url save nahi hai, to hume yahan calculate karna padega
+    # taaki frontend ko hamesha sahi URL mile.
+    if "slug" in store:
+        store["store_url"] = f"/pages/store.html?store={store['slug']}"
+
     return store
