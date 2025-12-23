@@ -9,7 +9,6 @@ from routers.feedback import router as feedback_router
 from routers.ai import router as ai_router
 from routers.maim import router as maim_router
 from routers.blog import router as blog_router
-from routers.store import router as store_router
 
 app = FastAPI(
     title="YUKU Protocol API",
@@ -37,7 +36,6 @@ app.include_router(feedback_router)
 app.include_router(ai_router)
 app.include_router(maim_router)
 app.include_router(blog_router)
-app.include_router(store_router)
 
 
 
