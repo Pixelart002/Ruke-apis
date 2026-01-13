@@ -28,6 +28,10 @@ except Exception as e:
     
 db = client.yuku_protocol_db
 user_collection = db["agents"]
+store_collection = db["store_items"]
+history_collection = db["store_history"]
+settings_collection = db["store_settings"]
+
 
 
 
