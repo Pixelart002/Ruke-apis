@@ -33,15 +33,6 @@ history_collection = db["store_history"]
 settings_collection = db["store_settings"]
 
 
-# --- Indexes for Speed ---
-# Ensures fast sorting and searching
-store_collection.create_index("name")
-history_collection.create_index("inv_id", unique=True)
-history_collection.create_index("date")
-
-
-
-
 # new function h ye 
 
 async def db_ping():
