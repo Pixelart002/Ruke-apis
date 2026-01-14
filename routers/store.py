@@ -143,9 +143,7 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True: await websocket.receive_text()
     except WebSocketDisconnect: manager.disconnect(websocket)
-    
-    
-    @router.patch("/history/{inv_id}")
+@router.patch("/history/{inv_id}")
 async def update_invoice_payment(inv_id: str, payment_data: Dict[str, Any]):
     amount = payment_data.get("amount", 0)
     
@@ -207,3 +205,6 @@ async def update_invoice_payment(inv_id: str, payment_data: Dict[str, Any]):
     })
     
     return result
+    
+    
+    
