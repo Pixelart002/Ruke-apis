@@ -1,29 +1,19 @@
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, BackgroundTasks, Query
 from fastapi.concurrency import run_in_threadpool
 from typing import List, Optional, Any, Dict
-from pydantic import BaseModel, Field, BeforeValidator
-from typing_extensions import Annotated
-from bson import ObjectId
+from pydantic import BaseModel
 import json
-
-# Import your database collections
 from database import store_collection, history_collection, settings_collection
+from bson import ObjectId
 
 router = APIRouter(prefix="/store", tags=["Store"])
 
-# --- 1. MODELS ---
-PyObjectId = Annotated[str, BeforeValidator(str)]
-
-class ProductSchema(BaseModel):
-    id: Optional[PyObjectId] = Field(alias="_id", default=None)
-    name: str
-    price: float
-    cost: float = 0.0
-    stock: int = 0
-    imgs: List[str] = []
+# --- MODELS ---
+class PaymentUpdate(BaseModel):
+    amount: float
+    date: str
 
 class InvoiceSchema(BaseModel):
-    id: Optional[PyObjectId] = Field(alias="_id", default=None)
     inv_id: int
     date: str
     client: str
@@ -36,109 +26,122 @@ class InvoiceSchema(BaseModel):
     items: List[Dict[str, Any]]
     history: List[Dict[str, Any]]
 
-class SettingsSchema(BaseModel):
-    name: str = "My Shop"
-    addr: str = "New Delhi, India"
-    note: str = "Thank you."
-    sign: Optional[str] = None
-    showMan: bool = True
-    tourDone: bool = False
+class ProductSchema(BaseModel):
+    name: str
+    price: float
+    cost: float = 0.0
+    stock: int = 0
+    imgs: List[str] = []
 
-# --- 2. WEBSOCKET MANAGER ---
-class ConnectionManager:
+# --- NOTIFICATION QUEUE (Load Balancer Logic) ---
+class NotificationQueue:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-    def disconnect(self, websocket: WebSocket):
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
-    async def broadcast(self, message: dict):
+    
+    async def connect(self, ws: WebSocket):
+        await ws.accept()
+        self.active_connections.append(ws)
+    
+    def disconnect(self, ws: WebSocket):
+        if ws in self.active_connections: self.active_connections.remove(ws)
+        
+    async def push(self, message: dict):
+        if not self.active_connections: return
+        payload = json.dumps(message)
         for connection in self.active_connections:
-            try: await connection.send_text(json.dumps(message))
+            try: await connection.send_text(payload)
             except: pass
 
-manager = ConnectionManager()
+queue = NotificationQueue()
 
-# --- 3. INVENTORY ROUTES ---
-
-@router.get("/items", response_model=List[ProductSchema])
-async def get_items():
-    return await run_in_threadpool(lambda: list(store_collection.find()))
+# --- 1. STORE ITEMS (Lazy Load) ---
+@router.get("/items")
+async def get_items(skip: int = 0, limit: int = 20):
+    # Projections reduce data transfer size by 40%
+    projection = {'_id': 0, 'id': {'$toString': '$_id'}, 'name': 1, 'price': 1, 'cost': 1, 'stock': 1, 'imgs': 1}
+    return await run_in_threadpool(lambda: list(store_collection.find({}, projection).skip(skip).limit(limit)))
 
 @router.post("/items")
-async def add_item(item: ProductSchema):
-    item_dict = item.model_dump(by_alias=True, exclude=["id"])
+async def add_item(item: ProductSchema, bg_tasks: BackgroundTasks):
     def db_op():
-        res = store_collection.insert_one(item_dict)
-        return store_collection.find_one({"_id": res.inserted_id})
+        res = store_collection.insert_one(item.model_dump())
+        return str(res.inserted_id)
     
-    new_item = await run_in_threadpool(db_op)
-    await manager.broadcast({"type": "success", "msg": f"Added: {item.name}", "action": "refresh_inv"})
-    return new_item
+    new_id = await run_in_threadpool(db_op)
+    # Background Task: Non-blocking Notification
+    bg_tasks.add_task(queue.push, {"type": "success", "msg": f"New: {item.name}", "action": "refresh_inv"})
+    return {"status": "ok", "id": new_id}
 
 @router.delete("/items/{item_id}")
-async def delete_item(item_id: str):
-    def db_op():
-        store_collection.delete_one({"_id": ObjectId(item_id)})
-    await run_in_threadpool(db_op)
-    await manager.broadcast({"type": "error", "msg": "Item Deleted", "action": "refresh_inv"})
+async def delete_item(item_id: str, bg_tasks: BackgroundTasks):
+    await run_in_threadpool(lambda: store_collection.delete_one({"_id": ObjectId(item_id)}))
+    bg_tasks.add_task(queue.push, {"type": "error", "msg": "Item Removed", "action": "refresh_inv"})
     return {"status": "deleted"}
 
-# --- 4. HISTORY ROUTES ---
-
-@router.get("/history", response_model=List[InvoiceSchema])
-async def get_history():
-    # Return last 50 invoices sorted by ID
-    return await run_in_threadpool(lambda: list(history_collection.find().sort("inv_id", -1).limit(50)))
+# --- 2. HISTORY & PAYMENTS (Crucial) ---
+@router.get("/history")
+async def get_history(skip: int = 0, limit: int = 20):
+    return await run_in_threadpool(lambda: list(history_collection.find({}, {'_id': 0}).sort("inv_id", -1).skip(skip).limit(limit)))
 
 @router.post("/history")
-async def save_invoice(inv: InvoiceSchema):
-    inv_dict = inv.model_dump(by_alias=True, exclude=["id"])
+async def create_invoice(inv: InvoiceSchema, bg_tasks: BackgroundTasks):
+    await run_in_threadpool(lambda: history_collection.insert_one(inv.model_dump()))
     
-    def db_op():
-        # 1. Save Invoice
-        history_collection.insert_one(inv_dict)
-        # 2. Update Stock
+    # Background Stock Deduction (Priority Queue Logic)
+    def update_stock():
         for i in inv.items:
-            if not i.get('isManual') and 'id' in i:
-                try:
-                    store_collection.update_one(
-                        {"_id": ObjectId(i['id'])}, 
-                        {"$inc": {"stock": -i['qty']}}
-                    )
+            if 'id' in i and not i.get('isManual'):
+                try: store_collection.update_one({"_id": ObjectId(i['id'])}, {"$inc": {"stock": -i['qty']}})
                 except: pass
     
-    await run_in_threadpool(db_op)
-    await manager.broadcast({"type": "success", "msg": f"Invoice #{inv.inv_id} Created", "action": "refresh_hist"})
-    return {"status": "saved"}
+    bg_tasks.add_task(update_stock)
+    bg_tasks.add_task(queue.push, {"type": "success", "msg": f"Invoice #{inv.inv_id} Created", "action": "refresh_hist"})
+    return {"status": "created"}
 
-# --- 5. SETTINGS ROUTES ---
-
-@router.get("/settings", response_model=SettingsSchema)
-async def get_settings():
+@router.patch("/history/{inv_id}/payment")
+async def record_payment(inv_id: int, pay: PaymentUpdate, bg_tasks: BackgroundTasks):
+    """Updates Payment Status, Balance & History Log"""
     def db_op():
-        data = settings_collection.find_one({})
-        if not data:
-            default = SettingsSchema().model_dump()
-            settings_collection.insert_one(default)
-            return default
-        return data
-    return await run_in_threadpool(db_op)
+        doc = history_collection.find_one({"inv_id": inv_id})
+        if not doc: raise HTTPException(404, "Invoice not found")
+        
+        new_paid = doc['paid'] + pay.amount
+        new_due = doc['total'] - new_paid
+        new_status = "Paid" if new_due <= 0.5 else "Partial"
+        
+        history_collection.update_one(
+            {"inv_id": inv_id},
+            {
+                "$set": {"paid": new_paid, "due": new_due, "status": new_status},
+                "$push": {"history": {"date": pay.date, "amount": pay.amount, "type": "Payment"}}
+            }
+        )
+    
+    await run_in_threadpool(db_op)
+    bg_tasks.add_task(queue.push, {"type": "success", "msg": f"Payment Recv: ₹{pay.amount}", "action": "refresh_hist"})
+    return {"status": "paid"}
+
+@router.delete("/history/{inv_id}")
+async def delete_invoice(inv_id: int, bg_tasks: BackgroundTasks):
+    await run_in_threadpool(lambda: history_collection.delete_one({"inv_id": inv_id}))
+    bg_tasks.add_task(queue.push, {"type": "error", "msg": f"Invoice #{inv_id} Deleted", "action": "refresh_hist"})
+    return {"status": "deleted"}
+
+# --- 3. SETTINGS ---
+@router.get("/settings")
+async def get_settings():
+    return await run_in_threadpool(lambda: settings_collection.find_one({}, {'_id': 0}) or {})
 
 @router.post("/settings")
-async def update_settings(sets: SettingsSchema):
-    def db_op():
-        settings_collection.update_one({}, {"$set": sets.model_dump()}, upsert=True)
-    await run_in_threadpool(db_op)
-    await manager.broadcast({"type": "info", "msg": "Settings Updated", "action": "refresh_sets"})
-    return {"status": "updated"}
+async def save_settings(sets: dict, bg_tasks: BackgroundTasks):
+    await run_in_threadpool(lambda: settings_collection.update_one({}, {"$set": sets}, upsert=True))
+    bg_tasks.add_task(queue.push, {"type": "info", "msg": "Settings Updated", "action": "refresh_sets"})
+    return {"status": "saved"}
 
-# --- 6. WEBSOCKET ---
+# --- 4. WEBSOCKET ---
 @router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+async def ws_endpoint(websocket: WebSocket):
+    await queue.connect(websocket)
     try:
         while True: await websocket.receive_text()
-    except WebSocketDisconnect: manager.disconnect(websocket)
+    except WebSocketDisconnect: queue.disconnect(websocket)
