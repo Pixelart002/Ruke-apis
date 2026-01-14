@@ -142,3 +142,56 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True: await websocket.receive_text()
     except WebSocketDisconnect: manager.disconnect(websocket)
+    # Add this inside your router (e.g., after the POST /history route)
+
+@router.patch("/history/{inv_id}")
+async def update_invoice_payment(inv_id: int, payment_data: Dict[str, Any]):
+    amount = payment_data.get("amount", 0)
+    
+    def db_op():
+        # 1. Find the existing invoice
+        invoice = history_collection.find_one({"inv_id": inv_id})
+        if not invoice:
+            return None
+        
+        # 2. Calculate new totals
+        new_paid = float(invoice.get("paid", 0)) + float(amount)
+        total = float(invoice.get("total", 0))
+        new_due = max(0, total - new_paid)
+        
+        # 3. Determine new status
+        new_status = "Paid" if new_due <= 0.1 else "Partial"
+        
+        # 4. Update the document
+        payment_entry = {
+            "date": "2026-01-14T11:13:25", # You can use datetime.now().isoformat()
+            "amount": amount,
+            "type": "Update"
+        }
+        
+        history_collection.update_one(
+            {"inv_id": inv_id},
+            {
+                "$set": {
+                    "paid": new_paid,
+                    "due": new_due,
+                    "status": new_status
+                },
+                "$push": {"history": payment_entry}
+            }
+        )
+        return {"inv_id": inv_id, "status": new_status}
+
+    result = await run_in_threadpool(db_op)
+    
+    if not result:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+        
+    # Broadcast to all connected clients to refresh their history
+    await manager.broadcast({
+        "type": "success", 
+        "msg": f"Payment of ₹{amount} recorded for #{inv_id}", 
+        "action": "refresh_hist"
+    })
+    
+    return result
