@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, BeforeValidator
 from typing_extensions import Annotated
 from bson import ObjectId
 import json
+from datetime import datetime
 
 # Import your database collections
 from database import store_collection, history_collection, settings_collection
@@ -142,35 +143,46 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True: await websocket.receive_text()
     except WebSocketDisconnect: manager.disconnect(websocket)
-    # Add this inside your router (e.g., after the POST /history route)
-
-@router.patch("/history/{inv_id}")
-async def update_invoice_payment(inv_id: int, payment_data: Dict[str, Any]):
+    
+    
+    @router.patch("/history/{inv_id}")
+async def update_invoice_payment(inv_id: str, payment_data: Dict[str, Any]):
     amount = payment_data.get("amount", 0)
     
     def db_op():
-        # 1. Find the existing invoice
-        invoice = history_collection.find_one({"inv_id": inv_id})
+        # 1. Determine if search is by integer inv_id or MongoDB ObjectId
+        try:
+            # Try numeric ID first (e.g., 1001)
+            search_query = {"inv_id": int(inv_id)}
+        except ValueError:
+            # Fallback to MongoDB string ID
+            search_query = {"_id": ObjectId(inv_id)}
+
+        # 2. Find the existing invoice
+        invoice = history_collection.find_one(search_query)
         if not invoice:
             return None
         
-        # 2. Calculate new totals
-        new_paid = float(invoice.get("paid", 0)) + float(amount)
+        # 3. Calculate new totals
+        current_paid = float(invoice.get("paid", 0))
         total = float(invoice.get("total", 0))
-        new_due = max(0, total - new_paid)
         
-        # 3. Determine new status
-        new_status = "Paid" if new_due <= 0.1 else "Partial"
+        new_paid = round(current_paid + float(amount), 2)
+        new_due = max(0, round(total - new_paid, 2))
         
-        # 4. Update the document
+        # 4. Determine new status
+        new_status = "Paid" if new_due < 0.5 else "Partial"
+        
+        # 5. Prepare payment entry
         payment_entry = {
-            "date": "2026-01-14T11:13:25", # You can use datetime.now().isoformat()
-            "amount": amount,
-            "type": "Update"
+            "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "amount": float(amount),
+            "type": "Partial Payment" if new_due > 0 else "Full Payment"
         }
         
+        # 6. Update document
         history_collection.update_one(
-            {"inv_id": inv_id},
+            search_query,
             {
                 "$set": {
                     "paid": new_paid,
@@ -180,17 +192,17 @@ async def update_invoice_payment(inv_id: int, payment_data: Dict[str, Any]):
                 "$push": {"history": payment_entry}
             }
         )
-        return {"inv_id": inv_id, "status": new_status}
+        return {"inv_id": invoice.get("inv_id"), "status": new_status, "amount": amount}
 
     result = await run_in_threadpool(db_op)
     
     if not result:
-        raise HTTPException(status_code=404, detail="Invoice not found")
+        raise HTTPException(status_code=404, detail=f"Invoice {inv_id} not found")
         
-    # Broadcast to all connected clients to refresh their history
+    # Broadcast to update all connected clients
     await manager.broadcast({
         "type": "success", 
-        "msg": f"Payment of ₹{amount} recorded for #{inv_id}", 
+        "msg": f"Payment of ₹{result['amount']} recorded for #{result['inv_id']}", 
         "action": "refresh_hist"
     })
     
