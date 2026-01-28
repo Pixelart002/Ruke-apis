@@ -6,7 +6,6 @@ import os
 from pymongo import MongoClient
 # Assuming database.py exports 'db' or 'get_db'. 
 # Adjust this import based on your exact database.py structure.
-from database import db_client  # Ya jo bhi tumhara sync connection object hai
 
 router = APIRouter(prefix="/store", tags=["Store"])
 
