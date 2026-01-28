@@ -1,37 +1,42 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Header, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.concurrency import run_in_threadpool
-from typing import List, Optional, Any, Dict
+from fastapi import APIRouter, HTTPException, Depends, status, Body
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
-from bson import ObjectId
-import json
 from datetime import datetime
-
-# --- DATABASE SETUP ---
-# Replace with your actual connection string
+import os
 from pymongo import MongoClient
-client = MongoClient("YOUR_MONGODB_URI_HERE")
-db = client["billing_db"]
-store_collection = db["products"]
-history_collection = db["invoices"]
-settings_collection = db["settings"]
+# Assuming database.py exports 'db' or 'get_db'. 
+# Adjust this import based on your exact database.py structure.
+from database import db_client  # Ya jo bhi tumhara sync connection object hai
 
-app = FastAPI(title="Yuku Protocol API")
+router = APIRouter(prefix="/store", tags=["Store"])
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# --- DATABASE HELPER ---
+# Is function se hum ensure karte hain ki humein sahi collection mile
+def get_collection(name: str):
+    db = db_client["billing_db"] # Apne DB ka naam yahan confirm karlena
+    return db[name]
 
-# --- MODELS ---
+# --- PYDANTIC MODELS (Strict Validation) ---
 class ProductSchema(BaseModel):
     name: str
     price: float
     cost: float = 0.0
     stock: int = 0
     imgs: List[str] = []
+
+class InvoiceItem(BaseModel):
+    id: str  # Frontend 'id' bhej raha hai
+    name: str
+    price: float
+    cost: float = 0.0
+    qty: int
+    isManual: bool = False
+    imgs: List[str] = []
+
+class PaymentRecord(BaseModel):
+    date: str
+    amount: float
+    type: str
 
 class InvoiceSchema(BaseModel):
     inv_id: int
@@ -43,75 +48,148 @@ class InvoiceSchema(BaseModel):
     status: str
     paid: float
     due: float
-    items: List[Dict[str, Any]]
-    history: List[Dict[str, Any]]
+    items: List[InvoiceItem]
+    history: List[PaymentRecord] = []
 
-# --- ROUTES ---
+class SettingsSchema(BaseModel):
+    name: str = "My Shop"
+    addr: str = "India"
+    note: str = "Thank you."
+    taxRate: float = 0.0
+    sign: Optional[str] = None
+    showMan: bool = True
+    showTax: bool = True
+    showDisc: bool = True
+    tourDone: bool = False
 
-@app.get("/store/items")
-async def get_items():
-    return await run_in_threadpool(lambda: list(store_collection.find({}, {"_id": 0})))
+class PatchPayment(BaseModel):
+    amount: float
 
-@app.post("/store/items")
-async def add_item(item: ProductSchema):
-    def db_op():
-        store_collection.update_one({"name": item.name}, {"$set": item.model_dump()}, upsert=True)
-        return {"status": "success"}
-    return await run_in_threadpool(db_op)
-
-@app.get("/store/history")
-async def get_history():
-    return await run_in_threadpool(lambda: list(history_collection.find({}, {"_id": 0}).sort("inv_id", -1).limit(100)))
-
-@app.post("/store/history")
-async def save_invoice(inv: InvoiceSchema):
-    def db_op():
-        # 1. Save Invoice
-        history_collection.insert_one(inv.model_dump())
-        # 2. Update Stock
-        for i in inv.items:
-            if not i.get('isManual'):
-                store_collection.update_one({"name": i['name']}, {"$inc": {"stock": -i['qty']}})
-        return {"status": "saved"}
-    return await run_in_threadpool(db_op)
-
-@app.patch("/store/history/{inv_id}")
-async def update_payment(inv_id: int, data: Dict[str, Any]):
-    amount = float(data.get("amount", 0))
-    def db_op():
-        inv = history_collection.find_one({"inv_id": inv_id})
-        if not inv: return None
-        new_paid = float(inv.get("paid", 0)) + amount
-        new_due = max(0, float(inv.get("total", 0)) - new_paid)
-        new_status = "Paid" if new_due <= 0.1 else "Partial"
-        history_collection.update_one(
-            {"inv_id": inv_id},
-            {
-                "$set": {"paid": new_paid, "due": new_due, "status": new_status},
-                "$push": {"history": {"date": datetime.now().strftime("%Y-%m-%d %H:%M"), "amount": amount, "type": "Partial Payment"}}
-            }
+# --- ADVANCED UTILS ---
+def check_idempotency(col, query):
+    """
+    Backend Debounce: Check karta hai ki record pehle se exist toh nahi karta.
+    """
+    if col.find_one(query):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Duplicate request detected. Resource already exists."
         )
-        return {"status": "updated"}
-    return await run_in_threadpool(db_op)
 
-@app.get("/store/settings")
-async def get_settings():
-    return await run_in_threadpool(lambda: settings_collection.find_one({}, {"_id": 0}) or {"name": "My Shop", "addr": "India", "note": "Thank you"})
+# --- ROUTES (Note: Using 'def' for auto-threadpool) ---
 
-@app.post("/store/settings")
-async def update_settings(data: Dict[str, Any]):
-    await run_in_threadpool(lambda: settings_collection.update_one({}, {"$set": data}, upsert=True))
+# 1. GET ALL ITEMS
+@router.get("/items", response_model=List[ProductSchema])
+def get_items():
+    col = get_collection("products")
+    # Projection {_id: 0} use kiya taaki response fast ho
+    items = list(col.find({}, {"_id": 0}))
+    return items
+
+# 2. ADD/UPDATE ITEM (Upsert)
+@router.post("/items")
+def add_item(item: ProductSchema):
+    col = get_collection("products")
+    # Upsert logic: Agar item hai to update, nahi to insert
+    result = col.update_one(
+        {"name": item.name},
+        {"$set": item.model_dump()},
+        upsert=True
+    )
+    action = "updated" if result.matched_count else "created"
+    return {"status": "success", "action": action, "item": item.name}
+
+# 3. GET HISTORY (With Pagination)
+@router.get("/history", response_model=List[InvoiceSchema])
+def get_history(skip: int = 0, limit: int = 100):
+    col = get_collection("invoices")
+    # Latest invoices pehle aayenge (sort by inv_id desc)
+    invoices = list(col.find({}, {"_id": 0}).sort("inv_id", -1).skip(skip).limit(limit))
+    return invoices
+
+# 4. SAVE INVOICE (Transaction-like Logic)
+@router.post("/history", status_code=status.HTTP_201_CREATED)
+def save_invoice(inv: InvoiceSchema):
+    inv_col = get_collection("invoices")
+    prod_col = get_collection("products")
+
+    # Step 1: Idempotency Check (Double save rokne ke liye)
+    check_idempotency(inv_col, {"inv_id": inv.inv_id})
+
+    # Step 2: Save Invoice
+    inv_col.insert_one(inv.model_dump())
+
+    # Step 3: Atomic Stock Update ($inc use kiya taaki race condition na ho)
+    # Advanced practice: Bulk update use karna better hota hai heavy load pe,
+    # par abhi loop kaafi hai simple store ke liye.
+    for item in inv.items:
+        if not item.isManual:
+            prod_col.update_one(
+                {"name": item.name},
+                {"$inc": {"stock": -item.qty}}
+            )
+            
+    return {"status": "saved", "inv_id": inv.inv_id}
+
+# 5. SETTLE PAYMENT (Smart Logic)
+@router.patch("/history/{inv_id}")
+def update_payment(inv_id: int, payload: PatchPayment):
+    amount = payload.amount
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be positive")
+
+    col = get_collection("invoices")
+    
+    # Current state fetch karo
+    inv = col.find_one({"inv_id": inv_id})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    # Calculations (Backend is source of truth)
+    current_paid = float(inv.get("paid", 0))
+    total = float(inv.get("total", 0))
+    
+    new_paid = current_paid + amount
+    # Negative due prevent karne ke liye max(0)
+    new_due = max(0.0, total - new_paid)
+    
+    # Auto-Status Update
+    new_status = "Paid" if new_due <= 0.5 else "Partial"
+
+    # Log Entry create karo
+    log_entry = {
+        "date": datetime.now().strftime("%d/%m/%Y, %I:%M %p"),
+        "amount": amount,
+        "type": "Settlement"
+    }
+
+    # Atomic Update using $set and $push
+    col.update_one(
+        {"inv_id": inv_id},
+        {
+            "$set": {
+                "paid": new_paid, 
+                "due": new_due, 
+                "status": new_status
+            },
+            "$push": {"history": log_entry}
+        }
+    )
+
+    return {"status": "updated", "new_due": new_due, "new_paid": new_paid}
+
+# 6. SETTINGS (Singleton Pattern fetch)
+@router.get("/settings", response_model=SettingsSchema)
+def get_settings():
+    col = get_collection("settings")
+    data = col.find_one({}, {"_id": 0})
+    if not data:
+        # Default return karo agar DB mein kuch nahi hai
+        return SettingsSchema().model_dump()
+    return data
+
+@router.post("/settings")
+def update_settings(sets: SettingsSchema):
+    col = get_collection("settings")
+    col.update_one({}, {"$set": sets.model_dump()}, upsert=True)
     return {"status": "updated"}
-
-# --- PUSH NOTIFICATION STUB ---
-@app.post("/webpush/send-test")
-async def send_test_push(authorization: str = Header(None)):
-    # This matches your Dashboard logic. 
-    # In production, this would trigger your FCM/VAPID logic.
-    return {"message": "System Alert Triggered Successfully"}
-
-if __name__ == "__main__":
-    import uvicorn
-    import os
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
