@@ -4,12 +4,16 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 import os
 from pymongo import MongoClient
-from database import db_client  # Ensure this imports your actual db instance
+
+# --- FIX IS HERE ---
+# Your database.py exports 'client', so we import 'client' and alias it as 'db_client'
+from database import client as db_client 
 
 router = APIRouter(prefix="/store", tags=["Store"])
 
 # --- HELPERS ---
 def get_collection(name: str):
+    # This creates/accesses a database named "billing_db"
     return db_client["billing_db"][name]
 
 def check_idempotency(col, query):
@@ -84,7 +88,7 @@ def add_item(item: ProductSchema):
     )
     return {"status": "success", "action": "updated" if result.matched_count else "created"}
 
-# 3. DELETE ITEM (New)
+# 3. DELETE ITEM
 @router.delete("/items/{name}")
 def delete_item(name: str):
     col = get_collection("products")
@@ -96,6 +100,7 @@ def delete_item(name: str):
 # 4. GET HISTORY
 @router.get("/history", response_model=List[InvoiceSchema])
 def get_history(skip: int = 0, limit: int = 100):
+    # Sort by inv_id descending (Newest first)
     return list(get_collection("invoices").find({}, {"_id": 0}).sort("inv_id", -1).skip(skip).limit(limit))
 
 # 5. SAVE INVOICE
@@ -117,7 +122,7 @@ def save_invoice(inv: InvoiceSchema):
             
     return {"status": "saved", "inv_id": inv.inv_id}
 
-# 6. DELETE INVOICE (New - With Stock Restore)
+# 6. DELETE INVOICE (With Stock Restore)
 @router.delete("/history/{inv_id}")
 def delete_invoice(inv_id: int):
     inv_col = get_collection("invoices")
@@ -156,6 +161,7 @@ def update_payment(inv_id: int, payload: PatchPayment):
     total = float(inv.get("total", 0))
     
     new_paid = current_paid + amount
+    
     # Strict Backend Check: Allow max 1 rupee buffer for round off
     if new_paid > (total + 1.0):
         raise HTTPException(status_code=400, detail=f"Overpayment! Max allowed: {total - current_paid}")
