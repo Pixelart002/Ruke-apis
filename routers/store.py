@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 import os
 from pymongo import MongoClient
+from database import db_client  # Ensure this imports your actual db instance
 
 router = APIRouter(prefix="/store", tags=["Store"])
 
