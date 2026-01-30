@@ -4,16 +4,12 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 import os
 from pymongo import MongoClient
-
-# --- FIX IS HERE ---
-# Your database.py exports 'client', so we import 'client' and alias it as 'db_client'
 from database import client as db_client 
 
 router = APIRouter(prefix="/store", tags=["Store"])
 
 # --- HELPERS ---
 def get_collection(name: str):
-    # This creates/accesses a database named "billing_db"
     return db_client["billing_db"][name]
 
 def check_idempotency(col, query):
@@ -80,7 +76,7 @@ def get_items():
 @router.post("/items")
 def add_item(item: ProductSchema):
     col = get_collection("products")
-    # Upsert based on Name. If name exists, update details. If not, create.
+    # Upsert based on Name.
     result = col.update_one(
         {"name": item.name},
         {"$set": item.model_dump()},
@@ -88,7 +84,7 @@ def add_item(item: ProductSchema):
     )
     return {"status": "success", "action": "updated" if result.matched_count else "created"}
 
-# 3. DELETE ITEM
+# 3. DELETE ITEM (Added)
 @router.delete("/items/{name}")
 def delete_item(name: str):
     col = get_collection("products")
@@ -100,7 +96,6 @@ def delete_item(name: str):
 # 4. GET HISTORY
 @router.get("/history", response_model=List[InvoiceSchema])
 def get_history(skip: int = 0, limit: int = 100):
-    # Sort by inv_id descending (Newest first)
     return list(get_collection("invoices").find({}, {"_id": 0}).sort("inv_id", -1).skip(skip).limit(limit))
 
 # 5. SAVE INVOICE
@@ -109,26 +104,21 @@ def save_invoice(inv: InvoiceSchema):
     inv_col = get_collection("invoices")
     prod_col = get_collection("products")
     
-    # Idempotency Check
     check_idempotency(inv_col, {"inv_id": inv.inv_id})
-    
-    # Save Invoice
     inv_col.insert_one(inv.model_dump())
 
-    # Update Stock
     for item in inv.items:
         if not item.isManual:
             prod_col.update_one({"name": item.name}, {"$inc": {"stock": -item.qty}})
             
     return {"status": "saved", "inv_id": inv.inv_id}
 
-# 6. DELETE INVOICE (With Stock Restore)
+# 6. DELETE INVOICE (Added - Restores Stock)
 @router.delete("/history/{inv_id}")
 def delete_invoice(inv_id: int):
     inv_col = get_collection("invoices")
     prod_col = get_collection("products")
     
-    # Fetch invoice to restore stock
     inv = inv_col.find_one({"inv_id": inv_id})
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -138,10 +128,9 @@ def delete_invoice(inv_id: int):
         if not item.get("isManual", False):
             prod_col.update_one(
                 {"name": item["name"]},
-                {"$inc": {"stock": item["qty"]}} # Add back quantity
+                {"$inc": {"stock": item["qty"]}}
             )
             
-    # Delete document
     inv_col.delete_one({"inv_id": inv_id})
     return {"status": "deleted", "inv_id": inv_id}
 
