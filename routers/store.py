@@ -72,19 +72,40 @@ class PatchPayment(BaseModel):
 def get_items():
     return list(get_collection("products").find({}, {"_id": 0}))
 
-# 2. ADD/UPDATE ITEM
+# 2. ADD NEW ITEM (Strictly Add)
 @router.post("/items")
 def add_item(item: ProductSchema):
     col = get_collection("products")
-    # Upsert based on Name.
-    result = col.update_one(
-        {"name": item.name},
-        {"$set": item.model_dump()},
-        upsert=True
-    )
-    return {"status": "success", "action": "updated" if result.matched_count else "created"}
+    
+    # Check if product with this name already exists
+    if col.find_one({"name": item.name}):
+        raise HTTPException(status_code=409, detail=f"Product '{item.name}' already exists.")
+        
+    col.insert_one(item.model_dump())
+    return {"status": "success", "action": "created", "name": item.name}
 
-# 3. DELETE ITEM (Added)
+# 3. UPDATE ITEM (Strictly Edit - Supports Renaming)
+@router.put("/items/{original_name}")
+def update_item(original_name: str, item: ProductSchema):
+    col = get_collection("products")
+    
+    # Check if the item we are trying to edit exists
+    existing = col.find_one({"name": original_name})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    # If the user is changing the name, ensure the NEW name isn't taken by someone else
+    if item.name != original_name and col.find_one({"name": item.name}):
+        raise HTTPException(status_code=409, detail=f"Product name '{item.name}' is already taken.")
+
+    # Update the document
+    col.update_one(
+        {"name": original_name},
+        {"$set": item.model_dump()}
+    )
+    return {"status": "success", "action": "updated", "name": item.name}
+
+# 4. DELETE ITEM
 @router.delete("/items/{name}")
 def delete_item(name: str):
     col = get_collection("products")
@@ -93,12 +114,12 @@ def delete_item(name: str):
         raise HTTPException(status_code=404, detail="Item not found")
     return {"status": "deleted", "name": name}
 
-# 4. GET HISTORY
+# 5. GET HISTORY
 @router.get("/history", response_model=List[InvoiceSchema])
 def get_history(skip: int = 0, limit: int = 100):
     return list(get_collection("invoices").find({}, {"_id": 0}).sort("inv_id", -1).skip(skip).limit(limit))
 
-# 5. SAVE INVOICE
+# 6. SAVE INVOICE
 @router.post("/history", status_code=201)
 def save_invoice(inv: InvoiceSchema):
     inv_col = get_collection("invoices")
@@ -113,7 +134,7 @@ def save_invoice(inv: InvoiceSchema):
             
     return {"status": "saved", "inv_id": inv.inv_id}
 
-# 6. DELETE INVOICE (Added - Restores Stock)
+# 7. DELETE INVOICE
 @router.delete("/history/{inv_id}")
 def delete_invoice(inv_id: int):
     inv_col = get_collection("invoices")
@@ -123,7 +144,6 @@ def delete_invoice(inv_id: int):
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
         
-    # Restore stock
     for item in inv.get("items", []):
         if not item.get("isManual", False):
             prod_col.update_one(
@@ -134,7 +154,7 @@ def delete_invoice(inv_id: int):
     inv_col.delete_one({"inv_id": inv_id})
     return {"status": "deleted", "inv_id": inv_id}
 
-# 7. UPDATE PAYMENT
+# 8. UPDATE PAYMENT
 @router.patch("/history/{inv_id}")
 def update_payment(inv_id: int, payload: PatchPayment):
     amount = payload.amount
@@ -150,8 +170,6 @@ def update_payment(inv_id: int, payload: PatchPayment):
     total = float(inv.get("total", 0))
     
     new_paid = current_paid + amount
-    
-    # Strict Backend Check: Allow max 1 rupee buffer for round off
     if new_paid > (total + 1.0):
         raise HTTPException(status_code=400, detail=f"Overpayment! Max allowed: {total - current_paid}")
 
@@ -174,7 +192,7 @@ def update_payment(inv_id: int, payload: PatchPayment):
 
     return {"status": "updated"}
 
-# 8. SETTINGS
+# 9. SETTINGS
 @router.get("/settings", response_model=SettingsSchema)
 def get_settings():
     data = get_collection("settings").find_one({}, {"_id": 0})
