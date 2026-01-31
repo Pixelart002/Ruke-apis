@@ -72,54 +72,37 @@ class PatchPayment(BaseModel):
 def get_items():
     return list(get_collection("products").find({}, {"_id": 0}))
 
-# 2. ADD NEW ITEM (Strictly Add)
+# 2. ADD/UPDATE ITEM
 @router.post("/items")
 def add_item(item: ProductSchema):
     col = get_collection("products")
-    
-    # Check if product with this name already exists
-    if col.find_one({"name": item.name}):
-        raise HTTPException(status_code=409, detail=f"Product '{item.name}' already exists.")
-        
-    col.insert_one(item.model_dump())
-    return {"status": "success", "action": "created", "name": item.name}
+    result = col.update_one(
+        {"name": item.name},
+        {"$set": item.model_dump()},
+        upsert=True
+    )
+    return {"status": "success", "action": "updated" if result.matched_count else "created"}
 
-# 3. UPDATE ITEM (Strictly Edit - Supports Renaming)
+# 3. UPDATE ITEM (Strict Edit)
 @router.put("/items/{original_name}")
 def update_item(original_name: str, item: ProductSchema):
     col = get_collection("products")
-    
-    # Check if the item we are trying to edit exists
     existing = col.find_one({"name": original_name})
     if not existing:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    # If the user is changing the name, ensure the NEW name isn't taken by someone else
     if item.name != original_name and col.find_one({"name": item.name}):
         raise HTTPException(status_code=409, detail=f"Product name '{item.name}' is already taken.")
 
-    # Update the document
-    col.update_one(
-        {"name": original_name},
-        {"$set": item.model_dump()}
-    )
+    col.update_one({"name": original_name}, {"$set": item.model_dump()})
     return {"status": "success", "action": "updated", "name": item.name}
 
-# 4. DELETE ITEM
-@router.delete("/items/{name}")
-def delete_item(name: str):
-    col = get_collection("products")
-    result = col.delete_one({"name": name})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Item not found")
-    return {"status": "deleted", "name": name}
-
-# 5. GET HISTORY
+# 4. GET HISTORY
 @router.get("/history", response_model=List[InvoiceSchema])
 def get_history(skip: int = 0, limit: int = 100):
     return list(get_collection("invoices").find({}, {"_id": 0}).sort("inv_id", -1).skip(skip).limit(limit))
 
-# 6. SAVE INVOICE
+# 5. SAVE INVOICE
 @router.post("/history", status_code=201)
 def save_invoice(inv: InvoiceSchema):
     inv_col = get_collection("invoices")
@@ -134,16 +117,21 @@ def save_invoice(inv: InvoiceSchema):
             
     return {"status": "saved", "inv_id": inv.inv_id}
 
-# 7. DELETE INVOICE
-@router.delete("/history/{inv_id}")
-def delete_invoice(inv_id: int):
+# 6. VOID INVOICE (Enterprise Standard)
+# Instead of deleting, we mark as 'Void' and restore stock.
+@router.patch("/history/{inv_id}/void")
+def void_invoice(inv_id: int):
     inv_col = get_collection("invoices")
     prod_col = get_collection("products")
     
     inv = inv_col.find_one({"inv_id": inv_id})
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    
+    if inv.get("status") == "Void":
+         raise HTTPException(status_code=400, detail="Invoice is already Void")
         
+    # Restore stock
     for item in inv.get("items", []):
         if not item.get("isManual", False):
             prod_col.update_one(
@@ -151,10 +139,22 @@ def delete_invoice(inv_id: int):
                 {"$inc": {"stock": item["qty"]}}
             )
             
-    inv_col.delete_one({"inv_id": inv_id})
-    return {"status": "deleted", "inv_id": inv_id}
+    log_entry = {
+        "date": datetime.now().strftime("%d/%m/%Y, %I:%M %p"),
+        "amount": 0,
+        "type": "VOIDED"
+    }
+            
+    inv_col.update_one(
+        {"inv_id": inv_id},
+        {
+            "$set": {"status": "Void", "due": 0.0}, # Void bills have 0 due
+            "$push": {"history": log_entry}
+        }
+    )
+    return {"status": "voided", "inv_id": inv_id}
 
-# 8. UPDATE PAYMENT
+# 7. UPDATE PAYMENT (Ledger Settle)
 @router.patch("/history/{inv_id}")
 def update_payment(inv_id: int, payload: PatchPayment):
     amount = payload.amount
@@ -165,6 +165,9 @@ def update_payment(inv_id: int, payload: PatchPayment):
     inv = col.find_one({"inv_id": inv_id})
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
+        
+    if inv.get("status") == "Void":
+        raise HTTPException(status_code=400, detail="Cannot pay for a Voided invoice")
 
     current_paid = float(inv.get("paid", 0))
     total = float(inv.get("total", 0))
@@ -192,7 +195,7 @@ def update_payment(inv_id: int, payload: PatchPayment):
 
     return {"status": "updated"}
 
-# 9. SETTINGS
+# 8. SETTINGS
 @router.get("/settings", response_model=SettingsSchema)
 def get_settings():
     data = get_collection("settings").find_one({}, {"_id": 0})
