@@ -1,6 +1,6 @@
 fastapi
 uvicorn[standard]
-pymongo[srv]
+motor # Added Motor for Async DB
 python-dotenv
 python-jose[cryptography]
 email-validator
@@ -10,12 +10,9 @@ httpx
 bcrypt==3.2.0
 passlib==1.7.4
 pywebpush
-httpx
 python-multipart
 qrcode[pil]==7.4.2
 pypdf
 duckduckgo-search
 tweepy
 python-slugify
-
-

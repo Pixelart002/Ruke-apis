@@ -1,29 +1,11 @@
-from pydantic import BaseModel, EmailStr, Field,field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 import re # Regular expressions ke liye yeh import zaroori hai
-
-
-
-
 
 class UserCreate(BaseModel):
     fullname: str = Field(..., min_length=3, max_length=50)
     username: str = Field(..., min_length=3, max_length=20, pattern="^[a-zA-Z0-9_]+$")
-    
-
-
-
-    
-
     email: EmailStr
     password: str = Field(..., min_length=6)
-    
-
-    
-    
-    
-    
-    
-    
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -39,15 +21,9 @@ class UserInfo(BaseModel):
     fullname: str
     email: EmailStr
 
-
-
 class UserUpdate(BaseModel):
     fullname: str = Field(..., min_length=3, max_length=50)
     username: str = Field(..., min_length=3, max_length=20, pattern="^[a-zA-Z0-9_]+$")
-
-
-
-
 
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
@@ -55,13 +31,3 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     password: str = Field(..., min_length=6)
-
-
-
-
-
-
-
-
-
-

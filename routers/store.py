@@ -3,17 +3,24 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from datetime import datetime
 import os
-from pymongo import MongoClient
-from database import client as db_client 
+# from pymongo import MongoClient - Removed
+from database import db # Direct db import from updated database.py
 
 router = APIRouter(prefix="/store", tags=["Store"])
 
 # --- HELPERS ---
 def get_collection(name: str):
-    return db_client["billing_db"][name]
+    if db is None:
+        raise HTTPException(500, "Database Disconnected")
+    # Mapping old collection names to new ones if needed, 
+    # or just returning the collection object from db
+    if name == "products": return db.store_items
+    if name == "invoices": return db.store_history
+    if name == "settings": return db.store_settings
+    return db[name]
 
-def check_idempotency(col, query):
-    if col.find_one(query):
+async def check_idempotency(col, query):
+    if await col.find_one(query):
         raise HTTPException(status_code=409, detail="Duplicate Entry")
 
 # --- MODELS ---
@@ -67,70 +74,92 @@ class PatchPayment(BaseModel):
 
 # --- ROUTES ---
 
-# 1. GET ITEMS
+# 1. GET ITEMS (Async)
 @router.get("/items", response_model=List[ProductSchema])
-def get_items():
-    return list(get_collection("products").find({}, {"_id": 0}))
-
-# 2. ADD NEW ITEM (Strictly Add)
-@router.post("/items")
-def add_item(item: ProductSchema):
+async def get_items():
     col = get_collection("products")
-    if col.find_one({"name": item.name}):
+    # Motor returns a cursor, use to_list
+    items = await col.find({}, {"_id": 0}).to_list(length=1000)
+    return items
+
+# 2. ADD NEW ITEM (Strictly Add - Async)
+@router.post("/items")
+async def add_item(item: ProductSchema):
+    col = get_collection("products")
+    # Added await
+    if await col.find_one({"name": item.name}):
         raise HTTPException(status_code=409, detail=f"Product '{item.name}' already exists.")
-    col.insert_one(item.model_dump())
+    
+    # Added await
+    await col.insert_one(item.model_dump())
     return {"status": "success", "action": "created", "name": item.name}
 
-# 3. UPDATE ITEM (Edit / Rename)
+# 3. UPDATE ITEM (Async)
 @router.put("/items/{original_name}")
-def update_item(original_name: str, item: ProductSchema):
+async def update_item(original_name: str, item: ProductSchema):
     col = get_collection("products")
-    existing = col.find_one({"name": original_name})
+    
+    # Added await
+    existing = await col.find_one({"name": original_name})
     if not existing:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    if item.name != original_name and col.find_one({"name": item.name}):
-        raise HTTPException(status_code=409, detail=f"Product name '{item.name}' is already taken.")
+    if item.name != original_name:
+        # Added await
+        if await col.find_one({"name": item.name}):
+            raise HTTPException(status_code=409, detail=f"Product name '{item.name}' is already taken.")
 
-    col.update_one({"name": original_name}, {"$set": item.model_dump()})
+    # Added await
+    await col.update_one({"name": original_name}, {"$set": item.model_dump()})
     return {"status": "success", "action": "updated", "name": item.name}
 
-# 4. DELETE ITEM (Now Supported)
+# 4. DELETE ITEM (Async)
 @router.delete("/items/{name}")
-def delete_item(name: str):
+async def delete_item(name: str):
     col = get_collection("products")
-    result = col.delete_one({"name": name})
+    
+    # Added await
+    result = await col.delete_one({"name": name})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Item not found")
     return {"status": "deleted", "name": name}
 
-# 5. GET HISTORY
+# 5. GET HISTORY (Async)
 @router.get("/history", response_model=List[InvoiceSchema])
-def get_history(skip: int = 0, limit: int = 100):
-    return list(get_collection("invoices").find({}, {"_id": 0}).sort("inv_id", -1).skip(skip).limit(limit))
+async def get_history(skip: int = 0, limit: int = 100):
+    col = get_collection("invoices")
+    # Motor cursor chaining
+    cursor = col.find({}, {"_id": 0}).sort("inv_id", -1).skip(skip).limit(limit)
+    invoices = await cursor.to_list(length=limit)
+    return invoices
 
-# 6. SAVE INVOICE
+# 6. SAVE INVOICE (Async)
 @router.post("/history", status_code=201)
-def save_invoice(inv: InvoiceSchema):
+async def save_invoice(inv: InvoiceSchema):
     inv_col = get_collection("invoices")
     prod_col = get_collection("products")
     
-    check_idempotency(inv_col, {"inv_id": inv.inv_id})
-    inv_col.insert_one(inv.model_dump())
+    # Await helper
+    await check_idempotency(inv_col, {"inv_id": inv.inv_id})
+    
+    # Added await
+    await inv_col.insert_one(inv.model_dump())
 
     for item in inv.items:
         if not item.isManual:
-            prod_col.update_one({"name": item.name}, {"$inc": {"stock": -item.qty}})
+            # Added await
+            await prod_col.update_one({"name": item.name}, {"$inc": {"stock": -item.qty}})
             
     return {"status": "saved", "inv_id": inv.inv_id}
 
-# 7. VOID INVOICE (Enterprise Standard)
+# 7. VOID INVOICE (Async)
 @router.patch("/history/{inv_id}/void")
-def void_invoice(inv_id: int):
+async def void_invoice(inv_id: int):
     inv_col = get_collection("invoices")
     prod_col = get_collection("products")
     
-    inv = inv_col.find_one({"inv_id": inv_id})
+    # Added await
+    inv = await inv_col.find_one({"inv_id": inv_id})
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
     
@@ -139,21 +168,26 @@ def void_invoice(inv_id: int):
         
     for item in inv.get("items", []):
         if not item.get("isManual", False):
-            prod_col.update_one({"name": item["name"]}, {"$inc": {"stock": item["qty"]}})
+            # Added await
+            await prod_col.update_one({"name": item["name"]}, {"$inc": {"stock": item["qty"]}})
             
     log_entry = { "date": datetime.now().strftime("%d/%m/%Y, %I:%M %p"), "amount": 0, "type": "VOIDED" }
-    inv_col.update_one({"inv_id": inv_id}, { "$set": {"status": "Void", "due": 0.0}, "$push": {"history": log_entry} })
+    
+    # Added await
+    await inv_col.update_one({"inv_id": inv_id}, { "$set": {"status": "Void", "due": 0.0}, "$push": {"history": log_entry} })
     return {"status": "voided", "inv_id": inv_id}
 
-# 8. UPDATE PAYMENT
+# 8. UPDATE PAYMENT (Async)
 @router.patch("/history/{inv_id}")
-def update_payment(inv_id: int, payload: PatchPayment):
+async def update_payment(inv_id: int, payload: PatchPayment):
     amount = payload.amount
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be positive")
 
     col = get_collection("invoices")
-    inv = col.find_one({"inv_id": inv_id})
+    
+    # Added await
+    inv = await col.find_one({"inv_id": inv_id})
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
@@ -171,17 +205,23 @@ def update_payment(inv_id: int, payload: PatchPayment):
     new_status = "Paid" if new_due <= 0.5 else "Partial"
 
     log_entry = { "date": datetime.now().strftime("%d/%m/%Y, %I:%M %p"), "amount": amount, "type": "Settlement" }
-    col.update_one({"inv_id": inv_id}, { "$set": {"paid": new_paid, "due": new_due, "status": new_status}, "$push": {"history": log_entry} })
+    
+    # Added await
+    await col.update_one({"inv_id": inv_id}, { "$set": {"paid": new_paid, "due": new_due, "status": new_status}, "$push": {"history": log_entry} })
 
     return {"status": "updated"}
 
-# 9. SETTINGS
+# 9. SETTINGS (Async)
 @router.get("/settings", response_model=SettingsSchema)
-def get_settings():
-    data = get_collection("settings").find_one({}, {"_id": 0})
+async def get_settings():
+    col = get_collection("settings")
+    # Added await
+    data = await col.find_one({}, {"_id": 0})
     return data if data else SettingsSchema().model_dump()
 
 @router.post("/settings")
-def update_settings(sets: SettingsSchema):
-    get_collection("settings").update_one({}, {"$set": sets.model_dump()}, upsert=True)
+async def update_settings(sets: SettingsSchema):
+    col = get_collection("settings")
+    # Added await
+    await col.update_one({}, {"$set": sets.model_dump()}, upsert=True)
     return {"status": "updated"}

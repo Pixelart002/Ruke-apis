@@ -37,7 +37,8 @@ class BlogPostResponse(BlogPostCreate):
     views: int
 
 # --- 2. SECURITY CHECK (Helper) ---
-def verify_admin(current_user: dict = Depends(auth_utils.get_current_user)):
+# Async banaya gaya hai taaki future-proof rahe
+async def verify_admin(current_user: dict = Depends(auth_utils.get_current_user)):
     if current_user["email"] != MY_ADMIN_EMAIL:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -75,7 +76,9 @@ async def create_post(
     admin_user: dict = Depends(verify_admin)
 ):
     slug = slugify(post.title)
-    if db.posts.find_one({"slug": slug}):
+    
+    # Added await
+    if await db.posts.find_one({"slug": slug}):
         slug = f"{slug}-{int(datetime.now().timestamp())}"
 
     new_post = post.dict()
@@ -87,10 +90,11 @@ async def create_post(
         "views": 0
     })
 
-    result = db.posts.insert_one(new_post)
+    # Added await
+    result = await db.posts.insert_one(new_post)
     
-    # Fetch the inserted document and fix ID
-    created_post = db.posts.find_one({"_id": result.inserted_id})
+    # Added await - Fetch the inserted document and fix ID
+    created_post = await db.posts.find_one({"_id": result.inserted_id})
     return fix_post_id(created_post)
 
 # [NEW] B. Edit Post (SECURE) - UPDATE ENDPOINT
@@ -100,8 +104,8 @@ async def update_post(
     update_data: BlogPostUpdate,
     admin_user: dict = Depends(verify_admin)
 ):
-    # 1. Check if post exists
-    existing_post = db.posts.find_one({"slug": slug})
+    # 1. Check if post exists - Added await
+    existing_post = await db.posts.find_one({"slug": slug})
     if not existing_post:
         raise HTTPException(status_code=404, detail="Post not found")
 
@@ -111,25 +115,29 @@ async def update_post(
     if not data_to_update:
         raise HTTPException(status_code=400, detail="No data provided for update")
 
-    # 3. Update in Database
-    db.posts.update_one(
+    # 3. Update in Database - Added await
+    await db.posts.update_one(
         {"slug": slug},
         {"$set": data_to_update}
     )
 
-    # 4. Fetch updated post
-    updated_post = db.posts.find_one({"slug": slug})
+    # 4. Fetch updated post - Added await
+    updated_post = await db.posts.find_one({"slug": slug})
     return fix_post_id(updated_post)
 
 # C. Read All Posts (PUBLIC)
 @router.get("/", response_model=List[BlogPostResponse])
 async def get_all_posts(limit: int = 10):
-    posts_cursor = db.posts.find(
+    # Motor cursor
+    cursor = db.posts.find(
         {"is_published": True}
     ).sort("created_at", -1).limit(limit)
     
+    # Async tarike se list convert karein
+    posts = await cursor.to_list(length=limit)
+    
     clean_posts = []
-    for p in posts_cursor:
+    for p in posts:
         # Use helper to clean ObjectId
         clean_posts.append(fix_post_id(p))
     
@@ -138,12 +146,14 @@ async def get_all_posts(limit: int = 10):
 # D. Read Single Post (PUBLIC)
 @router.get("/{slug}", response_model=BlogPostResponse)
 async def get_single_post(slug: str):
-    post = db.posts.find_one({"slug": slug, "is_published": True})
+    # Added await
+    post = await db.posts.find_one({"slug": slug, "is_published": True})
     
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
     
-    db.posts.update_one({"_id": post["_id"]}, {"$inc": {"views": 1}})
+    # Added await
+    await db.posts.update_one({"_id": post["_id"]}, {"$inc": {"views": 1}})
     
     # Use helper to clean ObjectId
     return fix_post_id(post)
@@ -151,7 +161,8 @@ async def get_single_post(slug: str):
 # E. Delete Post (SECURE)
 @router.delete("/{slug}")
 async def delete_post(slug: str, admin_user: dict = Depends(verify_admin)):
-    result = db.posts.delete_one({"slug": slug})
+    # Added await
+    result = await db.posts.delete_one({"slug": slug})
     
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Post nahi mila")

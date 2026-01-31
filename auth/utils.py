@@ -31,7 +31,6 @@ def get_password_hash(password):
 
 
 # --- JWT Token Creation ---
-# --- YEH FUNCTION UPDATE KIYA GAYA HAI ---
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
     if expires_delta:
@@ -41,8 +40,10 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
-# --- User Authentication Functions ---
-def get_current_user(token: str = Depends(oauth2_scheme)):
+
+# --- User Authentication Functions (UPDATED FOR ASYNC) ---
+# 1. 'async' keyword lagaya gaya
+async def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -56,7 +57,9 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     except JWTError:
         raise credentials_exception
     
-    user = user_collection.find_one({"email": email})
+    # 2. 'await' keyword lagaya gaya (Motor ke liye zaroori)
+    user = await user_collection.find_one({"email": email})
+    
     if user is None:
         raise credentials_exception
     return user
@@ -76,7 +79,6 @@ def send_password_reset_email(email: str, token: str):
     message["To"] = receiver_email
 
     # IMPORTANT: Update this URL to your frontend's deployed URL when you go live.
-    # For now, this is for local testing of a reset-password.html file.
     reset_link = f"https://yuku-nine.vercel.app/reset-password.html?token={token}"
 
     html = f"""
@@ -85,7 +87,6 @@ def send_password_reset_email(email: str, token: str):
     
     <div style="max-width:600px; margin:auto; background:#ffffff; border-radius:8px; padding:40px; box-shadow:0 2px 8px rgba(0,0,0,0.05); text-align:left;">
       
-      <!-- Logo / Animated Accent -->
       <div style="text-align:center; margin-bottom:25px;">
         <img src="https://media.giphy.com/media/26tn33aiTi1jkl6H6/giphy.gif" 
              alt="YUKU Security Animation" 
@@ -93,15 +94,12 @@ def send_password_reset_email(email: str, token: str):
              style="border-radius:50%; display:block; margin:auto;">
       </div>
       
-      <!-- Title -->
       <h2 style="margin:0 0 30px; font-size:22px; font-weight:600; color:#202124; text-align:center;">
         YUKU Protocol Security
       </h2>
       
-      <!-- Greeting -->
       <p style="font-size:16px; line-height:1.6; margin:0 0 20px;">Hi Agent,</p>
       
-      <!-- Message -->
       <p style="font-size:16px; line-height:1.6; margin:0 0 20px;">
         A password reset was requested for your <strong>YUKU Protocol</strong> account.
       </p>
@@ -110,7 +108,6 @@ def send_password_reset_email(email: str, token: str):
         Click the button below to set a new password. This link is valid for <strong>15 minutes</strong>.
       </p>
       
-      <!-- CTA Button -->
       <p style="text-align:center; margin:0 0 30px;">
         <a href="{reset_link}" 
            style="background:#1a73e8; color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:4px; font-weight:600; font-size:15px; display:inline-block;">
@@ -118,19 +115,16 @@ def send_password_reset_email(email: str, token: str):
         </a>
       </p>
       
-      <!-- Extra Info -->
       <p style="font-size:14px; line-height:1.6; color:#5f6368; margin:0 0 20px;">
         If you did not request this, you can safely ignore this email.
       </p>
       
-      <!-- Closing -->
       <p style="font-size:14px; line-height:1.6; margin:0;">
         Regards,<br>
         <strong>YUKU Mission Control</strong>
       </p>
     </div>
     
-    <!-- Footer -->
     <p style="margin-top:20px; font-size:12px; color:#9aa0a6;">
       © 2025 YUKU Protocol. All rights reserved.
     </p>
@@ -149,6 +143,3 @@ def send_password_reset_email(email: str, token: str):
     except Exception as e:
         print(f"Failed to send email: {e}")
         return False
-
-
-

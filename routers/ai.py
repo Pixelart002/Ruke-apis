@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Dict, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Form
+from fastapi import APIRouter, Depends, HTTPException, Form, BackgroundTasks
 from bson import ObjectId
 
 # --- LOCAL IMPORTS ---
@@ -33,12 +33,9 @@ def get_collection(name: str):
 async def call_pollinations(prompt: str, system_prompt: str, model: str) -> str:
     """
     Calls Pollinations AI API using POST method.
-    This prevents 'URI Too Long' errors and supports larger contexts.
     """
     headers = {"Content-Type": "application/json"}
     
-    # Construct JSON payload for POST request
-    # This structure mirrors OpenAI's chat completion format which Pollinations supports via POST
     payload = {
         "messages": [
             {"role": "system", "content": system_prompt},
@@ -51,11 +48,8 @@ async def call_pollinations(prompt: str, system_prompt: str, model: str) -> str:
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
-            # Using POST instead of GET
             r = await client.post(POLLINATIONS_URL, json=payload, headers=headers)
-            
             if r.status_code == 200:
-                # Pollinations returns the raw text response directly
                 return r.text.strip()
             else:
                 logger.error(f"AI Provider Error: {r.status_code} - {r.text}")
@@ -64,25 +58,13 @@ async def call_pollinations(prompt: str, system_prompt: str, model: str) -> str:
             logger.error(f"Pollinations Network Error: {e}")
             return "System Error: AI Service unreachable."
 
-# --- CORE ENDPOINTS ---
-
-@router.post("/chat")
-async def chat_endpoint(
-    prompt: str = Form(...),
-    chat_id: Optional[str] = Form(None),
-    model: str = Form("openai"),
-    current_user: Dict = Depends(auth_utils.get_current_user)
-):
+# --- BACKGROUND TASK FUNCTION ---
+async def save_chat_background(user_id: str, prompt: str, ai_response: str, chat_id: str, is_new: bool):
     """
-    Simple Chat Interface. 
-    Handles: Text Input + AI Response (via POST) + History Saving.
+    Saves chat to MongoDB in the background without blocking the response.
     """
     chats_collection = get_collection("chat_history")
-
-    # 1. Call AI (using stable POST method)
-    ai_response = await call_pollinations(prompt, DEVOPS_TEMPLATE, model)
-
-    # 2. Prepare Messages for Storage
+    
     user_msg = {
         "role": "user",
         "content": prompt,
@@ -95,29 +77,56 @@ async def chat_endpoint(
         "timestamp": datetime.now(timezone.utc)
     }
 
-    # 3. Save to Database
-    final_chat_id = chat_id
-    
-    if chat_id and ObjectId.is_valid(chat_id):
-        # Update existing chat
-        chats_collection.update_one(
+    if not is_new:
+        # Update existing chat (Async)
+        await chats_collection.update_one(
             {"_id": ObjectId(chat_id)},
             {"$push": {"messages": {"$each": [user_msg, ai_msg]}}}
         )
     else:
-        # Create new chat
+        # Create new chat with Pre-generated ID (Async)
         new_chat = {
-            "user_id": str(current_user["_id"]),
+            "_id": ObjectId(chat_id), # Use the ID we generated in the endpoint
+            "user_id": user_id,
             "title": prompt[:40] + "..." if len(prompt) > 40 else prompt,
             "created_at": datetime.now(timezone.utc),
             "messages": [user_msg, ai_msg]
         }
-        res = chats_collection.insert_one(new_chat)
-        final_chat_id = str(res.inserted_id)
+        await chats_collection.insert_one(new_chat)
+
+# --- CORE ENDPOINTS ---
+
+@router.post("/chat")
+async def chat_endpoint(
+    background_tasks: BackgroundTasks, # Added for non-blocking DB writes
+    prompt: str = Form(...),
+    chat_id: Optional[str] = Form(None),
+    model: str = Form("openai"),
+    current_user: Dict = Depends(auth_utils.get_current_user)
+):
+    """
+    Optimized Chat Interface. 
+    1. Calls AI (Async)
+    2. Offloads DB saving to BackgroundTasks
+    3. Returns response immediately
+    """
+    
+    # 1. Call AI
+    ai_response = await call_pollinations(prompt, DEVOPS_TEMPLATE, model)
+
+    # 2. Handle Chat ID (Generate if new)
+    is_new_chat = False
+    if not chat_id or not ObjectId.is_valid(chat_id):
+        chat_id = str(ObjectId()) # Pre-generate ID
+        is_new_chat = True
+    
+    # 3. Queue DB Save Task (Pass all data needed)
+    user_id = str(current_user["_id"])
+    background_tasks.add_task(save_chat_background, user_id, prompt, ai_response, chat_id, is_new_chat)
 
     return {
         "status": "success",
-        "chat_id": final_chat_id,
+        "chat_id": chat_id,
         "response": ai_response
     }
 
@@ -126,15 +135,17 @@ async def get_chat_history(
     current_user: Dict = Depends(auth_utils.get_current_user),
     limit: int = 20
 ):
-    """Loads previous chat sessions for the sidebar."""
+    """Loads previous chat sessions (Updated for Motor)."""
     chats_collection = get_collection("chat_history")
     
+    # Motor cursor
     cursor = chats_collection.find(
         {"user_id": str(current_user["_id"])}
     ).sort("created_at", -1).limit(limit)
     
     results = []
-    for c in cursor:
+    # Async For Loop for Motor
+    async for c in cursor:
         results.append({
             "id": str(c["_id"]),
             "title": c.get("title", "Untitled Chat"),
@@ -148,11 +159,12 @@ async def get_single_chat(
     chat_id: str,
     current_user: Dict = Depends(auth_utils.get_current_user)
 ):
-    """Loads messages for a specific chat."""
+    """Loads messages for a specific chat (Updated for Motor)."""
     if not ObjectId.is_valid(chat_id):
         raise HTTPException(400, "Invalid Chat ID")
-        
-    c = get_collection("chat_history").find_one({
+    
+    # Await find_one
+    c = await get_collection("chat_history").find_one({
         "_id": ObjectId(chat_id),
         "user_id": str(current_user["_id"])
     })
@@ -170,8 +182,9 @@ async def delete_chat(
     chat_id: str,
     current_user: Dict = Depends(auth_utils.get_current_user)
 ):
-    """Deletes a chat session."""
-    res = get_collection("chat_history").delete_one({
+    """Deletes a chat session (Updated for Motor)."""
+    # Await delete_one
+    res = await get_collection("chat_history").delete_one({
         "_id": ObjectId(chat_id),
         "user_id": str(current_user["_id"])
     })
